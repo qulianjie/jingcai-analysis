@@ -1,0 +1,19 @@
+Step 1: Get league teams
+  LEAGUE: 西甲
+  league_id: 19496
+  team_ids: 12 teams
+  sample: ['1034', '1577', '2255', '2257', '2828']
+
+Step 2: Get team fixtures
+  team 1034: 30 matches
+  team 1577: 30 matches
+  team 2255: 30 matches
+  team 2257: 30 matches
+  team 2828: 30 matches
+  Total records: 150
+
+Step 3: Filter by league
+  league_matches: 0 (after dedup)
+
+DEBUG: Source league names:
+  ['乌拉超', '南美超', '哥伦杯', '哥甲', '巴甲', '巴西杯', '巴超杯', '巴里洲赛', '球会友谊', '解放者杯', '阿根廷杯', '阿甲']

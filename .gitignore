@@ -1,0 +1,32 @@
+# Generated data
+tasks/
+data/
+data_export/
+learnings/
+test_cache/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# JS
+node_modules/
+
+# Secrets
+.env
+.locks/
+*.lock
+*.pid
+
+# Logs & temp
+*.log
+temp/
+tmp/
+*.csv
+*.xlsx
+
+# Temp files
+temp_check.py
+tmp_check_matches.py

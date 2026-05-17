@@ -1,0 +1,100 @@
+{
+  "主队主场": {
+    "id": "AzI_",
+    "name": "主队主场",
+    "description": null,
+    "type": "rich_text",
+    "rich_text": {}
+  },
+  "百家对比": {
+    "id": "Fj%3Cj",
+    "name": "百家对比",
+    "description": null,
+    "type": "rich_text",
+    "rich_text": {}
+  },
+  "比赛": {
+    "id": "IFV%3B",
+    "name": "比赛",
+    "description": null,
+    "type": "rich_text",
+    "rich_text": {}
+  },
+  "竞彩编号": {
+    "id": "IzRe",
+    "name": "竞彩编号",
+    "description": null,
+    "type": "rich_text",
+    "rich_text": {}
+  },
+  "欧赔组合": {
+    "id": "JfaR",
+    "name": "欧赔组合",
+    "description": null,
+    "type": "rich_text",
+    "rich_text": {}
+  },
+  "比赛日期": {
+    "id": "Rppn",
+    "name": "比赛日期",
+    "description": null,
+    "type": "date",
+    "date": {}
+  },
+  "让球预测": {
+    "id": "Tw%7CZ",
+    "name": "让球预测",
+    "description": null,
+    "type": "rich_text",
+    "rich_text": {}
+  },
+  "联赛": {
+    "id": "UUsY",
+    "name": "联赛",
+    "description": null,
+    "type": "rich_text",
+    "rich_text": {}
+  },
+  "IW同赔": {
+    "id": "%5DWu%3D",
+    "name": "IW同赔",
+    "description": null,
+    "type": "rich_text",
+    "rich_text": {}
+  },
+  "客队客场": {
+    "id": "lsby",
+    "name": "客队客场",
+    "description": null,
+    "type": "rich_text",
+    "rich_text": {}
+  },
+  "竞彩预测": {
+    "id": "m%5B~%7C",
+    "name": "竞彩预测",
+    "description": null,
+    "type": "rich_text",
+    "rich_text": {}
+  },
+  "欧赔趋势": {
+    "id": "nCsr",
+    "name": "欧赔趋势",
+    "description": null,
+    "type": "rich_text",
+    "rich_text": {}
+  },
+  "澳门亚盘": {
+    "id": "%7BvLy",
+    "name": "澳门亚盘",
+    "description": null,
+    "type": "rich_text",
+    "rich_text": {}
+  },
+  "Name": {
+    "id": "title",
+    "name": "Name",
+    "description": "",
+    "type": "title",
+    "title": {}
+  }
+}

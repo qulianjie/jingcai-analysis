@@ -1,0 +1,241 @@
+{
+  "version": 1,
+  "snapshots": [
+    {
+      "name": "base",
+      "time": "2026-05-01 18:10:51",
+      "type": "base",
+      "description": "当前在用版本（base）",
+      "scripts": {
+        "step0_fetch_matches.py": {
+          "hash": "d8972ed7d1e14821c1cb157d45a8da2f",
+          "size": 6307
+        },
+        "step146_extractor.py": {
+          "hash": "42bad4b8f08ae32d9363a8f500420ddb",
+          "size": 8696
+        },
+        "step235_runner.py": {
+          "hash": "76dcb8a1aa9dfb0092ba7576bcc4c175",
+          "size": 12913
+        },
+        "step7_runner.py": {
+          "hash": "09ba97608aa1f0250561964b8fa8a3f0",
+          "size": 17269
+        },
+        "step8_1923_extractor.py": {
+          "hash": "5cddf579cc066a184353dfdf7df1f512",
+          "size": 33693
+        },
+        "step918_extractor.py": {
+          "hash": "b9a2e2e9489fbd9b1d37e211b64327de",
+          "size": 21797
+        },
+        "step24_extractor.py": {
+          "hash": "e4326c50ccdde3aa532c3c9b76967d8b",
+          "size": 12970
+        },
+        "final_report_generator.py": {
+          "hash": "4ad6a07955494d6f17abc6fa64b6cdcf",
+          "size": 12180
+        },
+        "run_pipeline.py": {
+          "hash": "aa0c440417ae67403eb21930d0026a3c",
+          "size": 17669
+        },
+        "batch_full.py": {
+          "hash": "406e6da37e452ecef512dd4309d9a0ed",
+          "size": 5256
+        },
+        "protect.py": {
+          "hash": "dcb69a0d9ecfd46e19061fe24538a906",
+          "size": 10706
+        }
+      }
+    },
+    {
+      "name": "v1.0.0",
+      "time": "2026-05-01 18:11:49",
+      "type": "snapshot",
+      "description": "",
+      "scripts": {
+        "step0_fetch_matches.py": {
+          "hash": "d8972ed7d1e14821c1cb157d45a8da2f",
+          "size": 6307
+        },
+        "step146_extractor.py": {
+          "hash": "42bad4b8f08ae32d9363a8f500420ddb",
+          "size": 8696
+        },
+        "step235_runner.py": {
+          "hash": "76dcb8a1aa9dfb0092ba7576bcc4c175",
+          "size": 12913
+        },
+        "step7_runner.py": {
+          "hash": "09ba97608aa1f0250561964b8fa8a3f0",
+          "size": 17269
+        },
+        "step8_1923_extractor.py": {
+          "hash": "5cddf579cc066a184353dfdf7df1f512",
+          "size": 33693
+        },
+        "step918_extractor.py": {
+          "hash": "b9a2e2e9489fbd9b1d37e211b64327de",
+          "size": 21797
+        },
+        "step24_extractor.py": {
+          "hash": "e4326c50ccdde3aa532c3c9b76967d8b",
+          "size": 12970
+        },
+        "final_report_generator.py": {
+          "hash": "4ad6a07955494d6f17abc6fa64b6cdcf",
+          "size": 12180
+        },
+        "run_pipeline.py": {
+          "hash": "aa0c440417ae67403eb21930d0026a3c",
+          "size": 17669
+        },
+        "batch_full.py": {
+          "hash": "406e6da37e452ecef512dd4309d9a0ed",
+          "size": 5256
+        },
+        "protect.py": {
+          "hash": "dcb69a0d9ecfd46e19061fe24538a906",
+          "size": 10706
+        }
+      }
+    },
+    {
+      "name": "base",
+      "time": "2026-05-01 18:15:05",
+      "type": "base",
+      "description": "当前在用版本（base）",
+      "scripts": {
+        "step0_fetch_matches.py": {
+          "hash": "d8972ed7d1e14821c1cb157d45a8da2f",
+          "size": 6307
+        },
+        "step146_extractor.py": {
+          "hash": "42bad4b8f08ae32d9363a8f500420ddb",
+          "size": 8696
+        },
+        "step235_runner.py": {
+          "hash": "76dcb8a1aa9dfb0092ba7576bcc4c175",
+          "size": 12913
+        },
+        "step7_runner.py": {
+          "hash": "09ba97608aa1f0250561964b8fa8a3f0",
+          "size": 17269
+        },
+        "step8_1923_extractor.py": {
+          "hash": "5cddf579cc066a184353dfdf7df1f512",
+          "size": 33693
+        },
+        "step918_extractor.py": {
+          "hash": "b9a2e2e9489fbd9b1d37e211b64327de",
+          "size": 21797
+        },
+        "step24_extractor.py": {
+          "hash": "e4326c50ccdde3aa532c3c9b76967d8b",
+          "size": 12970
+        },
+        "final_report_generator.py": {
+          "hash": "4ad6a07955494d6f17abc6fa64b6cdcf",
+          "size": 12180
+        },
+        "run_pipeline.py": {
+          "hash": "aa0c440417ae67403eb21930d0026a3c",
+          "size": 17669
+        },
+        "batch_full.py": {
+          "hash": "406e6da37e452ecef512dd4309d9a0ed",
+          "size": 5256
+        },
+        "protect.py": {
+          "hash": "17a1ad2d526f9c10cc4845dd20bc55d2",
+          "size": 10760
+        },
+        "jingcai_feedback.py": {
+          "hash": "c57c9fa6522c91186f1c0cb452145f11",
+          "size": 16189
+        },
+        "jingcai_feedback_v2.py": {
+          "hash": "8ebf78287da7da6ba9e06bd95e605db3",
+          "size": 8901
+        },
+        "batch_feedback.py": {
+          "hash": "7b2fede145131adad467874334164d8e",
+          "size": 7530
+        }
+      }
+    },
+    {
+      "name": "v1.0.0_xhs",
+      "time": "2026-05-01 18:18:00",
+      "type": "snapshot",
+      "description": "",
+      "scripts": {
+        "jingcai/step0_fetch_matches.py": {
+          "hash": "d8972ed7d1e14821c1cb157d45a8da2f",
+          "size": 6307
+        },
+        "jingcai/step146_extractor.py": {
+          "hash": "42bad4b8f08ae32d9363a8f500420ddb",
+          "size": 8696
+        },
+        "jingcai/step235_runner.py": {
+          "hash": "76dcb8a1aa9dfb0092ba7576bcc4c175",
+          "size": 12913
+        },
+        "jingcai/step7_runner.py": {
+          "hash": "09ba97608aa1f0250561964b8fa8a3f0",
+          "size": 17269
+        },
+        "jingcai/step8_1923_extractor.py": {
+          "hash": "5cddf579cc066a184353dfdf7df1f512",
+          "size": 33693
+        },
+        "jingcai/step918_extractor.py": {
+          "hash": "b9a2e2e9489fbd9b1d37e211b64327de",
+          "size": 21797
+        },
+        "jingcai/step24_extractor.py": {
+          "hash": "e4326c50ccdde3aa532c3c9b76967d8b",
+          "size": 12970
+        },
+        "jingcai/final_report_generator.py": {
+          "hash": "4ad6a07955494d6f17abc6fa64b6cdcf",
+          "size": 12180
+        },
+        "jingcai/run_pipeline.py": {
+          "hash": "aa0c440417ae67403eb21930d0026a3c",
+          "size": 17669
+        },
+        "jingcai/batch_full.py": {
+          "hash": "406e6da37e452ecef512dd4309d9a0ed",
+          "size": 5256
+        },
+        "jingcai/protect.py": {
+          "hash": "17a1ad2d526f9c10cc4845dd20bc55d2",
+          "size": 10760
+        },
+        "jingcai/jingcai_feedback.py": {
+          "hash": "c57c9fa6522c91186f1c0cb452145f11",
+          "size": 16189
+        },
+        "jingcai/jingcai_feedback_v2.py": {
+          "hash": "8ebf78287da7da6ba9e06bd95e605db3",
+          "size": 8901
+        },
+        "jingcai/batch_feedback.py": {
+          "hash": "7b2fede145131adad467874334164d8e",
+          "size": 7530
+        },
+        "xhs/daily_generate_v8.py": {
+          "hash": "870d39b7a20d8ada3a80a5e0d1511fa0",
+          "size": 19368
+        }
+      }
+    }
+  ]
+}

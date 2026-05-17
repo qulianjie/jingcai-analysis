@@ -1,0 +1,12 @@
+2026-05-07: 6 total | step8: 6 ok, 0 fail | step19: 6 ok, 0 fail
+2026-05-08: 56 total | step8: 56 ok, 0 fail | step19: 56 ok, 0 fail
+2026-05-09: 30 total | step8: 30 ok, 0 fail | step19: 30 ok, 0 fail
+2026-05-10: 36 total | step8: 35 ok, 1 fail | step19: 35 ok, 1 fail
+  step8 fail: matches_data.json
+  step19 fail: matches_data.json
+2026-05-11: 10 total | step8: 10 ok, 0 fail | step19: 10 ok, 0 fail
+2026-05-12: 26 total | step8: 26 ok, 0 fail | step19: 26 ok, 0 fail
+2026-05-13: 12 total | step8: 12 ok, 0 fail | step19: 12 ok, 0 fail
+2026-05-14: 5 total | step8: 5 ok, 0 fail | step19: 5 ok, 0 fail
+
+TOTAL: 181 matches | step8: 180 ok, 1 fail | step19: 180 ok, 1 fail

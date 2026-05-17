@@ -1,0 +1,7 @@
+home_id: 838
+league: 西甲
+fid: 1216111
+url: https://liansai.500.com/team/838/teamfixture/
+match_count: 30
+src_leagues: ['西班牙杯', '西甲']
+MATCH_EXACT: "西甲" == "西甲"

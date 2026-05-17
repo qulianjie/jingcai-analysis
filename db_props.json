@@ -1,0 +1,259 @@
+{
+  "竞彩信心": {
+    "id": "BTiE",
+    "name": "竞彩信心",
+    "description": null,
+    "type": "select",
+    "select": {
+      "options": [
+        {
+          "id": "061e083c-e82d-4022-877d-ebee5e3e85a4",
+          "name": "强",
+          "color": "green",
+          "description": null
+        },
+        {
+          "id": "ac65c026-1cb2-455d-88a9-be2cb9898179",
+          "name": "中",
+          "color": "yellow",
+          "description": null
+        },
+        {
+          "id": "98a85225-e3fc-4c6d-ab90-d87a2d6727c7",
+          "name": "弱",
+          "color": "orange",
+          "description": null
+        },
+        {
+          "id": "2b6cc8b2-b82d-49bc-8487-3b1d735f0c5e",
+          "name": "回避",
+          "color": "red",
+          "description": null
+        },
+        {
+          "id": "50a70cfa-5cfa-4b3a-b94f-3283545d9d27",
+          "name": "40%（回避信号）",
+          "color": "brown",
+          "description": null
+        },
+        {
+          "id": "e382649a-b7d8-4aa3-8db9-16c93b01dd45",
+          "name": "61%（弱信号）",
+          "color": "default",
+          "description": null
+        },
+        {
+          "id": "0b4b5646-72bd-4560-b1f7-b6bd537e29b8",
+          "name": "83%（中信号）",
+          "color": "blue",
+          "description": null
+        },
+        {
+          "id": "f6fd6206-891e-4cad-af96-55087ffa7ae1",
+          "name": "49%（弱信号）",
+          "color": "gray",
+          "description": null
+        },
+        {
+          "id": "babb7f31-ee7c-4ab0-a118-be0df6e4370e",
+          "name": "52%（弱信号）",
+          "color": "pink",
+          "description": null
+        },
+        {
+          "id": "239e6bb1-7ab0-40e0-9eb6-a4c67b726e39",
+          "name": "63%（弱信号）",
+          "color": "purple",
+          "description": null
+        },
+        {
+          "id": "8a2e7794-2628-4d6b-ae22-ff82298daf41",
+          "name": "67%（弱信号）",
+          "color": "pink",
+          "description": null
+        },
+        {
+          "id": "122fa887-3a1d-476d-bd4f-a1cecd75d757",
+          "name": "60%（弱信号）",
+          "color": "blue",
+          "description": null
+        },
+        {
+          "id": "c68e5ebb-b00e-44a7-948b-1e7f39f3ba6f",
+          "name": "65%（弱信号）",
+          "color": "default",
+          "description": null
+        },
+        {
+          "id": "d1609c9d-cd9f-449c-a069-3a52f3756f7d",
+          "name": "64%（弱信号）",
+          "color": "pink",
+          "description": null
+        },
+        {
+          "id": "de2896bd-bb5b-431b-b041-24ae6d36faed",
+          "name": "66%（弱信号）",
+          "color": "default",
+          "description": null
+        },
+        {
+          "id": "476238ff-ff71-414b-afc9-28b71aa304fd",
+          "name": "50%（弱信号）",
+          "color": "brown",
+          "description": null
+        },
+        {
+          "id": "0448a43c-3f57-4a17-b443-562bdb27caa2",
+          "name": "58%（弱信号）",
+          "color": "orange",
+          "description": null
+        },
+        {
+          "id": "d702e2c0-3715-4027-a8bd-8e71976c16d5",
+          "name": "48%（弱信号）",
+          "color": "brown",
+          "description": null
+        },
+        {
+          "id": "f42c4fbd-7dbe-4697-ba6f-0181d38494a4",
+          "name": "53%（弱信号）",
+          "color": "red",
+          "description": null
+        }
+      ]
+    }
+  },
+  "百家对比": {
+    "id": "Fj%3Cj",
+    "name": "百家对比",
+    "description": null,
+    "type": "rich_text",
+    "rich_text": {}
+  },
+  "比赛": {
+    "id": "IFV%3B",
+    "name": "比赛",
+    "description": null,
+    "type": "rich_text",
+    "rich_text": {}
+  },
+  "比赛日期": {
+    "id": "Rppn",
+    "name": "比赛日期",
+    "description": null,
+    "type": "date",
+    "date": {}
+  },
+  "让球预测": {
+    "id": "Tw%7CZ",
+    "name": "让球预测",
+    "description": null,
+    "type": "rich_text",
+    "rich_text": {}
+  },
+  "反馈总结": {
+    "id": "ZUtX",
+    "name": "反馈总结",
+    "description": null,
+    "type": "rich_text",
+    "rich_text": {}
+  },
+  "实际比分": {
+    "id": "%5CnWX",
+    "name": "实际比分",
+    "description": null,
+    "type": "rich_text",
+    "rich_text": {}
+  },
+  "让球趋势": {
+    "id": "_Dq%3A",
+    "name": "让球趋势",
+    "description": null,
+    "type": "rich_text",
+    "rich_text": {}
+  },
+  "盘路匹配": {
+    "id": "cRRA",
+    "name": "盘路匹配",
+    "description": null,
+    "type": "rich_text",
+    "rich_text": {}
+  },
+  "预测正确": {
+    "id": "cdGA",
+    "name": "预测正确",
+    "description": null,
+    "type": "checkbox",
+    "checkbox": {}
+  },
+  "实际结果": {
+    "id": "eGrb",
+    "name": "实际结果",
+    "description": null,
+    "type": "select",
+    "select": {
+      "options": [
+        {
+          "id": "a7238f5f-78e6-4d65-9d14-a3be301bc455",
+          "name": "胜",
+          "color": "green",
+          "description": null
+        },
+        {
+          "id": "d99a3b4f-803f-469c-b7f0-efdfc135cc1a",
+          "name": "平",
+          "color": "yellow",
+          "description": null
+        },
+        {
+          "id": "aec9ef75-4208-447f-9c66-e5525150cf88",
+          "name": "负",
+          "color": "red",
+          "description": null
+        }
+      ]
+    }
+  },
+  "竞彩预测": {
+    "id": "m%5B~%7C",
+    "name": "竞彩预测",
+    "description": null,
+    "type": "rich_text",
+    "rich_text": {}
+  },
+  "欧赔趋势": {
+    "id": "nCsr",
+    "name": "欧赔趋势",
+    "description": null,
+    "type": "rich_text",
+    "rich_text": {}
+  },
+  "反馈日期": {
+    "id": "soKH",
+    "name": "反馈日期",
+    "description": null,
+    "type": "date",
+    "date": {}
+  },
+  "亚盘趋势": {
+    "id": "v_jv",
+    "name": "亚盘趋势",
+    "description": null,
+    "type": "rich_text",
+    "rich_text": {}
+  },
+  "备注": {
+    "id": "xO%3E%5C",
+    "name": "备注",
+    "description": null,
+    "type": "rich_text",
+    "rich_text": {}
+  },
+  "Name": {
+    "id": "title",
+    "name": "Name",
+    "description": null,
+    "type": "title",
+    "title": {}
+  }
+}
