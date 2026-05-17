@@ -11,6 +11,12 @@ import re
 import os
 import sys
 import io
+
+from _log_util import setup_logger
+LOG_DIR = None
+if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]):
+    LOG_DIR = os.path.join(os.path.dirname(os.path.normpath(sys.argv[1])), 'logs')
+log = setup_logger('step0', LOG_DIR)
 import json
 from datetime import datetime
 from bs4 import BeautifulSoup
@@ -57,7 +63,7 @@ def fetch_sporttery(date_str):
             return matches
         return None
     except Exception as e:
-        print(f'  [sporttery] 获取失败: {e}')
+        log.info(f'  [sporttery] 获取失败: {e}')
         return None
 
 def fetch_trade_500(date_str):
@@ -107,7 +113,7 @@ def fetch_trade_500(date_str):
             return matches
         return None
     except Exception as e:
-        print(f'  [trade.500] 获取失败: {e}')
+        log.info(f'  [trade.500] 获取失败: {e}')
         return None
 
 def fetch_odds_500(date_str):
@@ -144,7 +150,7 @@ def fetch_odds_500(date_str):
             return matches
         return None
     except Exception as e:
-        print(f'  [odds.500] 获取失败: {e}')
+        log.info(f'  [odds.500] 获取失败: {e}')
         return None
 
 def fetch_sunday_matches(date_str=None):
@@ -152,7 +158,7 @@ def fetch_sunday_matches(date_str=None):
     if not date_str:
         date_str = datetime.now().strftime('%Y-%m-%d')
     
-    print(f'[FETCH] 尝试获取 {date_str} 竞彩比赛列表...')
+    log.info(f'[FETCH] 尝试获取 {date_str} 竞彩比赛列表...')
     
     # 计算当天是周几
     target_date = datetime.strptime(date_str, '%Y-%m-%d')
@@ -160,30 +166,30 @@ def fetch_sunday_matches(date_str=None):
     expected_day = day_names[target_date.weekday()]
     
     # 源1: sporttery.cn
-    print('  [源1] sporttery.cn...')
+    log.info('  [源1] sporttery.cn...')
     matches = fetch_sporttery(date_str)
     if matches:
-        print(f'  ✅ sporttery 获取成功: {len(matches)} 场')
+        log.info(f'  ✅ sporttery 获取成功: {len(matches)} 场')
         return matches
     
     # 源2: trade.500.com
-    print('  [源2] trade.500.com...')
+    log.info('  [源2] trade.500.com...')
     matches = fetch_trade_500(date_str)
     if matches:
         # 过滤：只保留当天周几的比赛
         original_count = len(matches)
         matches = [m for m in matches if m['matchnum'][:2] == expected_day]
-        print(f'  ✅ trade.500 获取成功: {len(matches)} 场 (过滤{original_count - len(matches)}场非当天)')
+        log.info(f'  ✅ trade.500 获取成功: {len(matches)} 场 (过滤{original_count - len(matches)}场非当天)')
         return matches
     
     # 源3: odds.500.com
-    print('  [源3] odds.500.com...')
+    log.info('  [源3] odds.500.com...')
     matches = fetch_odds_500(date_str)
     if matches:
-        print(f'  ✅ odds.500 获取成功: {len(matches)} 场')
+        log.info(f'  ✅ odds.500 获取成功: {len(matches)} 场')
         return matches
     
-    print(f'[WARN] 所有数据源均未获取到 {date_str} 的比赛数据')
+    log.info(f'[WARN] 所有数据源均未获取到 {date_str} 的比赛数据')
     return None
 
 def save_matches(matches, date_str, base_dir='jingcai/tasks'):
@@ -248,8 +254,8 @@ if __name__ == '__main__':
     date_str = args.date or datetime.now().strftime('%Y-%m-%d')
     base_dir = args.output_dir
     
-    print(f'[STEP] 第0步：获取竞彩比赛列表（多数据源 fallback）')
-    print(f'[DATE] 比赛日期: {date_str}')
+    log.info(f'[STEP] 第0步：获取竞彩比赛列表（多数据源 fallback）')
+    log.info(f'[DATE] 比赛日期: {date_str}')
     
     matches = fetch_sunday_matches(date_str)
     
@@ -265,10 +271,10 @@ if __name__ == '__main__':
                     new_leagues.add(jingcai_league)
             
             if new_leagues:
-                print(f'  [联赛探测] 发现 {len(new_leagues)} 个新联赛: {", ".join(new_leagues)}')
+                log.info(f'  [联赛探测] 发现 {len(new_leagues)} 个新联赛: {", ".join(new_leagues)}')
                 for league in new_leagues:
                     add_alias(league, league)
-                print(f'  [联赛探测] 映射表已更新')
+                log.info(f'  [联赛探测] 映射表已更新')
         except ImportError:
             pass
         
@@ -283,12 +289,12 @@ if __name__ == '__main__':
             groups[day] += 1
         
         total = len(matches)
-        print(f'[OK] 共 {total} 场比赛')
+        log.info(f'[OK] 共 {total} 场比赛')
         for day, count in sorted(groups.items()):
-            print(f'      {day}: {count}场')
+            log.info(f'      {day}: {count}场')
         if paths:
-            print(f'[FILE] JSON: {paths[0]}')
-            print(f'[FILE] Markdown: {paths[1]}')
+            log.info(f'[FILE] JSON: {paths[0]}')
+            log.info(f'[FILE] Markdown: {paths[1]}')
     else:
-        print('[ERROR] 获取失败 - 所有数据源均无数据')
+        log.info('[ERROR] 获取失败 - 所有数据源均无数据')
         sys.exit(1)

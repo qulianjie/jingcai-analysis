@@ -6,6 +6,7 @@
 用法2: python step235_runner.py <match_dir>  (自动从 meta.json 读取 fid/league)
 """
 import sys, os, requests, json, io
+from _log_util import setup_logger
 
 # 支持两种调用方式：match_dir 模式 或 参数模式
 if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]):
@@ -30,6 +31,11 @@ else:
     STEP5_OUT = sys.argv[5] if len(sys.argv) > 5 else 'step05_handicap_same.md'
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+
+LOG_DIR = None
+if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]):
+    LOG_DIR = os.path.join(os.path.dirname(os.path.normpath(sys.argv[1])), 'logs')
+log = setup_logger('step235', LOG_DIR)
 
 from bs4 import BeautifulSoup
 
@@ -314,7 +320,7 @@ if jc:
         p()
         data2 = fetch_same_odds(1, '%.2f' % jc['init_w'], '%.2f' % jc['init_d'], '%.2f' % jc['init_l'], FID)
         write_step('竞彩官网 相同赔率', bench_jc, data2, fetch_ouzi_odds, out=f)
-    print('[OK] Step 2: %s' % STEP2_OUT)
+    log.info('Step 2: %s' % os.path.basename(STEP2_OUT))
 
 # ============ Step 3: Interwetten同赔 ============
 if iwc:
@@ -328,7 +334,7 @@ if iwc:
         p()
         data3 = fetch_same_odds(4, '%.2f' % iwc['init_w'], '%.2f' % iwc['init_d'], '%.2f' % iwc['init_l'], FID)
         write_step('Interwetten 相同赔率', bench_iwc, data3, fetch_iw_odds, out=f)
-    print('[OK] Step 3: %s' % STEP3_OUT)
+    log.info('Step 3: %s' % os.path.basename(STEP3_OUT))
 
 # ============ Step 5: 让球同赔 ============
 if rq_jc:
@@ -344,4 +350,4 @@ if rq_jc:
         data5 = fetch_same_odds(1, '%.2f' % rq_jc['init_w'], '%.2f' % rq_jc['init_d'], '%.2f' % rq_jc['init_l'], FID,
             is_rangqiu=True, handicap=rq_jc['handicap'])
         write_step('竞彩让球 相同赔率', bench_rq, data5, fetch_rangqiu_odds, is_rangqiu=True, out=f)
-    print('[OK] Step 5: %s' % STEP5_OUT)
+    log.info('Step 5: %s' % os.path.basename(STEP5_OUT))

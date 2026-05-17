@@ -1,4 +1,10 @@
 import json
+
+from _log_util import setup_logger
+LOG_DIR = None
+if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]):
+    LOG_DIR = os.path.join(os.path.dirname(os.path.normpath(sys.argv[1])), 'logs')
+log = setup_logger('final_stats', LOG_DIR)
 import requests
 from collections import defaultdict
 import sys
@@ -19,7 +25,7 @@ r = requests.post(f'https://api.notion.com/v1/databases/{DB_ID}/query', headers=
     'page_size': 100
 }))
 may10_pages = r.json()['results']
-print(f'5月10日比赛: {len(may10_pages)} 场\n')
+log.info(f'5月10日比赛: {len(may10_pages)} 场\n')
 
 # 查询所有比赛
 r = requests.post(f'https://api.notion.com/v1/databases/{DB_ID}/query', headers=HEADERS, data=json.dumps({
@@ -27,7 +33,7 @@ r = requests.post(f'https://api.notion.com/v1/databases/{DB_ID}/query', headers=
     'page_size': 100
 }))
 all_pages = r.json()['results']
-print(f'所有比赛: {len(all_pages)} 场\n')
+log.info(f'所有比赛: {len(all_pages)} 场\n')
 
 def extract_matches(pages):
     matches = []
@@ -57,9 +63,9 @@ may10_matches = extract_matches(may10_pages)
 all_matches = extract_matches(all_pages)
 
 # 5月10日统计
-print('='*80)
-print('5月10日 30场比赛 - 按竞彩预测+步26分组统计')
-print('='*80)
+log.info('='*80)
+log.info('5月10日 30场比赛 - 按竞彩预测+步26分组统计')
+log.info('='*80)
 
 groups_510 = defaultdict(lambda: {'total': 0, '竞彩正确': 0, '让球正确': 0, '胜': 0, '平': 0, '负': 0})
 for m in may10_matches:
@@ -77,14 +83,14 @@ for key in sorted(groups_510.keys()):
     g = groups_510[key]
     acc_pred = g['竞彩正确'] / g['total'] * 100 if g['total'] > 0 else 0
     acc_rang = g['让球正确'] / g['total'] * 100 if g['total'] > 0 else 0
-    print(f'\n{key}')
-    print(f'  总: {g["total"]} | 竞彩正确: {g["竞彩正确"]}({acc_pred:.0f}%) | 让球正确: {g["让球正确"]}({acc_rang:.0f}%)')
-    print(f'  实际胜: {g["胜"]} | 实际平: {g["平"]} | 实际负: {g["负"]}')
+    log.info(f'\n{key}')
+    log.info(f'  总: {g["total"]} | 竞彩正确: {g["竞彩正确"]}({acc_pred:.0f}%) | 让球正确: {g["让球正确"]}({acc_rang:.0f}%)')
+    log.info(f'  实际胜: {g["胜"]} | 实际平: {g["平"]} | 实际负: {g["负"]}')
 
 # 全部比赛统计
-print('\n' + '='*80)
-print('Notion所有比赛 - 按竞彩预测+步26分组统计')
-print('='*80)
+log.info('\n' + '='*80)
+log.info('Notion所有比赛 - 按竞彩预测+步26分组统计')
+log.info('='*80)
 
 groups_all = defaultdict(lambda: {'total': 0, '竞彩正确': 0, '让球正确': 0, '胜': 0, '平': 0, '负': 0})
 for m in all_matches:
@@ -103,24 +109,24 @@ for key in sorted(groups_all.keys(), key=lambda k: -groups_all[k]['total']):
     g = groups_all[key]
     acc_pred = g['竞彩正确'] / g['total'] * 100 if g['total'] > 0 else 0
     acc_rang = g['让球正确'] / g['total'] * 100 if g['total'] > 0 else 0
-    print(f'\n{key}')
-    print(f'  总: {g["total"]} | 竞彩正确: {g["竞彩正确"]}({acc_pred:.0f}%) | 让球正确: {g["让球正确"]}({acc_rang:.0f}%)')
-    print(f'  实际胜: {g["胜"]} | 实际平: {g["平"]} | 实际负: {g["负"]}')
+    log.info(f'\n{key}')
+    log.info(f'  总: {g["total"]} | 竞彩正确: {g["竞彩正确"]}({acc_pred:.0f}%) | 让球正确: {g["让球正确"]}({acc_rang:.0f}%)')
+    log.info(f'  实际胜: {g["胜"]} | 实际平: {g["平"]} | 实际负: {g["负"]}')
 
 # 汇总
-print('\n' + '='*80)
-print('汇总')
-print('='*80)
+log.info('\n' + '='*80)
+log.info('汇总')
+log.info('='*80)
 
 # 5月10日汇总
 total_510 = len(may10_matches)
 correct_510 = sum(1 for m in may10_matches if m['pred_correct'])
 rang_correct_510 = sum(1 for m in may10_matches if m['rang_correct'])
-print(f'\n5月10日: {total_510}场 | 竞彩正确: {correct_510}({correct_510/total_510*100:.0f}%) | 让球正确: {rang_correct_510}({rang_correct_510/total_510*100:.0f}%)')
+log.info(f'\n5月10日: {total_510}场 | 竞彩正确: {correct_510}({correct_510/total_510*100:.0f}%) | 让球正确: {rang_correct_510}({rang_correct_510/total_510*100:.0f}%)')
 
 # 全部汇总
 all_with_score = [m for m in all_matches if m['score']]
 total_all = len(all_with_score)
 correct_all = sum(1 for m in all_with_score if m['pred_correct'])
 rang_correct_all = sum(1 for m in all_with_score if m['rang_correct'])
-print(f'全部: {total_all}场 | 竞彩正确: {correct_all}({correct_all/total_all*100:.0f}%) | 让球正确: {rang_correct_all}({rang_correct_all/total_all*100:.0f}%)')
+log.info(f'全部: {total_all}场 | 竞彩正确: {correct_all}({correct_all/total_all*100:.0f}%) | 让球正确: {rang_correct_all}({rang_correct_all/total_all*100:.0f}%)')

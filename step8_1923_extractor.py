@@ -7,6 +7,12 @@ import sys, os, json
 import io
 if hasattr(sys.stdout, 'buffer'):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+from _log_util import setup_logger
+
+LOG_DIR = None
+if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]):
+    LOG_DIR = os.path.join(os.path.dirname(os.path.normpath(sys.argv[1])), 'logs')
+log = setup_logger('step8', LOG_DIR)
 
 # 支持两种调用方式
 if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]):
@@ -125,7 +131,7 @@ def match_odds_prefix(bench, hist):
         return False
 
 # ============ 获取历史比赛（整个联赛） ============
-print('获取整个联赛比赛...')
+log.info('获取整个联赛比赛...')
 
 # ============ 联赛ID映射（联赛名称 -> liansai.500.com 联赛ID）
 # 自动从 leagues_all.json 加载完整958个联赛映射
@@ -200,10 +206,10 @@ def _build_league_id_map():
                 if key in league_map:
                     break
         
-        print('  联赛映射表加载: {} 个联赛 (从 leagues_all.json + league_map.json)'.format(len(leagues)))
+        log.info('  联赛映射表加载: {} 个联赛 (从 leagues_all.json + league_map.json)'.format(len(leagues)))
         return league_map
     except Exception as e:
-        print('  ⚠️ 加载 leagues_all.json 失败: {}'.format(e))
+        log.info('  ⚠️ 加载 leagues_all.json 失败: {}'.format(e))
         return {}
 
 LEAGUE_ID_MAP = _build_league_id_map()
@@ -217,8 +223,8 @@ CUP_NAMES = ['欧罗巴', '欧联', '欧协联', '解放者杯', '南美解放�
 is_cup = LEAGUE in CUP_NAMES
 
 if is_cup:
-    print('  [杯赛模式] 联赛: {}'.format(LEAGUE))
-    print('  从主队/客队赛程中收集杯赛球队...')
+    log.info('  [杯赛模式] 联赛: {}'.format(LEAGUE))
+    log.info('  从主队/客队赛程中收集杯赛球队...')
     # 迭代收集杯赛球队（2轮）
     # 第1轮：从主队/客队的杯赛历史中收集直接对手
     # 第2轮：从这些球队的杯赛历史中收集更多对手
@@ -227,7 +233,7 @@ if is_cup:
     seen_fid = set()
     for iteration in range(2):
         round_teams = sorted(team_ids)
-        print('  第{}轮: 遍历{}支球队...'.format(iteration+1, len(round_teams)))
+        log.info('  第{}轮: 遍历{}支球队...'.format(iteration+1, len(round_teams)))
         prev_count = len(team_ids)
         for i, tid in enumerate(round_teams, 1):
             url = 'https://liansai.500.com/team/{}/teamfixture/?SIMPLEGBNAME={}'.format(tid, LEAGUE)
@@ -250,23 +256,23 @@ if is_cup:
                 pass
             time.sleep(0.1)
             if i % 10 == 0:
-                print('    已处理 {}/{} 支...'.format(i, len(round_teams)))
+                log.info('    已处理 {}/{} 支...'.format(i, len(round_teams)))
         new_count = len(team_ids) - prev_count
-        print('  第{}轮新增: {}支球队, {}场比赛'.format(iteration+1, new_count, len(all_cup_matches)))
+        log.info('  第{}轮新增: {}支球队, {}场比赛'.format(iteration+1, new_count, len(all_cup_matches)))
         if new_count == 0:
             break
     team_ids.discard('')
-    print('  收集完成: {}支球队, {}场比赛'.format(len(team_ids), len(all_cup_matches)))
+    log.info('  收集完成: {}支球队, {}场比赛'.format(len(team_ids), len(all_cup_matches)))
     # 转换为列表
     all_matches = list(all_cup_matches.values())
-    print('  总记录: {} 条'.format(len(all_matches)))
+    log.info('  总记录: {} 条'.format(len(all_matches)))
 else:
     # 非杯赛：走联赛ID逻辑
     # 获取联赛球队列表
     team_ids = set()
     league_id = LEAGUE_ID_MAP.get(LEAGUE, '')
     if not league_id:
-        print('  ⚠️ 联赛 "{}" 未在映射表中，尝试从球队赛程推断...'.format(LEAGUE))
+        log.info('  ⚠️ 联赛 "{}" 未在映射表中，尝试从球队赛程推断...'.format(LEAGUE))
         # 回退：从主队赛程中获取联赛球队
         try:
             url = 'https://liansai.500.com/team/{}/teamfixture/'.format(HOME_ID)
@@ -279,14 +285,14 @@ else:
                 if m:
                     league_id = m.group(1)
                     LEAGUE_ID_MAP[LEAGUE] = league_id
-                    print('  从球队赛程推断联赛ID: {} = {}'.format(LEAGUE, league_id))
+                    log.info('  从球队赛程推断联赛ID: {} = {}'.format(LEAGUE, league_id))
                     break
         except Exception as e:
-            print('  推断失败: {}'.format(e))
+            log.info('  推断失败: {}'.format(e))
 
     if league_id:
         league_url = 'https://liansai.500.com/zuqiu-{}/'.format(league_id)
-        print('  联赛ID: {} -> {}'.format(LEAGUE, league_id))
+        log.info('  联赛ID: {} -> {}'.format(LEAGUE, league_id))
         try:
             resp = sess.get(league_url, timeout=15)
             resp.encoding = 'gbk'
@@ -297,19 +303,19 @@ else:
                 if m and '/teamfixture/' not in href:
                     team_ids.add(m.group(1))
         except Exception as e:
-            print('  获取联赛球队失败: {}'.format(e))
+            log.info('  获取联赛球队失败: {}'.format(e))
 
     # 如果联赛页面返回0球队（19xxx ID没有静态页面），回退到球队赛程收集
     if len(team_ids) == 0 and league_id:
-        print('  ⚠️ 联赛页面返回0球队，回退到球队赛程收集')
+        log.info('  ⚠️ 联赛页面返回0球队，回退到球队赛程收集')
         team_ids = {HOME_ID, AWAY_ID}
         league_id = ''
 
     if not league_id and len(team_ids) == 0:
-        print('  ⚠️ 无法获取联赛ID，回退到主队+客队')
+        log.info('  ⚠️ 无法获取联赛ID，回退到主队+客队')
         team_ids = {HOME_ID, AWAY_ID}
 
-    print('  联赛球队: {} 支'.format(len(team_ids)))
+    log.info('  联赛球队: {} 支'.format(len(team_ids)))
 
     # 获取所有球队赛程
     all_matches = []
@@ -326,8 +332,8 @@ else:
         except: pass
         time.sleep(0.2)
         if i % 4 == 0:
-            print('  已获取 {}/{} 支球队...'.format(i, len(team_ids)))
-    print('  总记录: {} 条'.format(len(all_matches)))
+            log.info('  已获取 {}/{} 支球队...'.format(i, len(team_ids)))
+    log.info('  总记录: {} 条'.format(len(all_matches)))
 
 # 筛选相同联赛（去重）
 league_matches = []
@@ -354,15 +360,15 @@ for d in all_matches:
         'home_id': str(d.get('HOMETEAMID','')),
         'away_id': str(d.get('AWAYTEAMID','')),
     })
-print('  同联赛: {} 场 (去重后)'.format(len(league_matches)))
+log.info('  同联赛: {} 场 (去重后)'.format(len(league_matches)))
 
 # ============ Step 8: 筛选相同盘口 ============
-print()
-print('='*60)
-print('第八步：相同联赛相同亚盘统计')
-print('='*60)
-print('澳门即时盘: {}'.format(MACAU_LINE))
-print()
+log.info()
+log.info('='*60)
+log.info('第八步：相同联赛相同亚盘统计')
+log.info('='*60)
+log.info('澳门即时盘: {}'.format(MACAU_LINE))
+log.info()
 
 handicap_matches = []
 seen_fid = set()
@@ -378,12 +384,12 @@ for m in league_matches:
     if _handicap_match(macau_clean, h):
         handicap_matches.append(m)
 
-print('  盘口匹配: {} 场'.format(len(handicap_matches)))
+log.info('  盘口匹配: {} 场'.format(len(handicap_matches)))
 
 # ============ 逐场获取Step 8数据 ============
-print()
-print('逐场获取亚盘+欧赔数据...')
-print()
+log.info()
+log.info('逐场获取亚盘+欧赔数据...')
+log.info()
 
 step8_data = []
 for i, m in enumerate(handicap_matches[:15], 1):
@@ -462,15 +468,15 @@ for i, m in enumerate(handicap_matches[:15], 1):
     
     if asian or ouzhi:
         step8_data.append({**m, 'asian': asian, 'ouzhi': ouzhi})
-        print('  #{} fid={}: {} vs {} {} 亚盘={}({}/{}) 欧赔={}'.format(
+        log.info('  #{} fid={}: {} vs {} {} 亚盘={}({}/{}) 欧赔={}'.format)
             i, fid, m['home'], m['away'], m['score'],
             asian['live_pan'] if asian else '-', asian['live_wh'] if asian else '-', asian['live_wa'] if asian else '-',
             '有' if ouzhi else '无'))
     time.sleep(0.3)
 
 # ============ 获取百家欧赔数据（Step 19-23） ============
-print()
-print('获取百家欧赔数据 ({} 场)...'.format(len(league_matches)))
+log.info()
+log.info('获取百家欧赔数据 ({} 场)...'.format(len(league_matches)))
 step19_data = []
 for i, m in enumerate(league_matches, 1):
     fid = m.get('fid', '')
@@ -503,14 +509,14 @@ for i, m in enumerate(league_matches, 1):
                 elif td0 == '6': iw = company
                 elif '\u767e' in td1 or '\u5e73' in td1: av = company
         step19_data.append({**m, 'ouzhi': {'jc': jc, 'iw': iw, 'av': av, 'all': all_companies}})
-        print('  #{} fid={}: {} vs {} {} 公司数={}'.format(i, fid, m['home'], m['away'], m['score'], len(all_companies)))
+        log.info('  #{} fid={}: {} vs {} {} 公司数={}'.format(i, fid, m['home'], m['away'], m['score'], len(all_companies)))
     except:
-        print('  #{} fid={}: 获取失败'.format(i, fid))
+        log.info('  #{} fid={}: 获取失败'.format(i, fid))
     time.sleep(0.3)
 
 # 当前比赛基准
-print()
-print('获取当前比赛基准...')
+log.info()
+log.info('获取当前比赛基准...')
 cur_ouzhi = None
 cur_jc = cur_iw = cur_av = None
 try:
@@ -547,9 +553,9 @@ try:
     if jc: print('  竞彩: {}/{}/{} -> {}/{}/{}'.format(jc['iw'],jc['id'],jc['il'],jc['lw'],jc['ld'],jc['ll']))
     if iw: print('  IWC: {}/{}/{} -> {}/{}/{}'.format(iw['iw'],iw['id'],iw['il'],iw['lw'],iw['ld'],iw['ll']))
     if av: print('  百家: {}/{}/{} -> {}/{}/{}'.format(av['iw'],av['id'],av['il'],av['lw'],av['ld'],av['ll']))
-    print('  公司数: {}'.format(len(all_companies)))
+    log.info('  公司数: {}'.format(len(all_companies)))
 except Exception as e:
-    print('  错误: {}'.format(e))
+    log.info('  错误: {}'.format(e))
 
 # ============ 输出 ============
 out = []
@@ -708,8 +714,8 @@ out.append(stats_summary(iw_stats_8))
 bench_av_live = None
 if cur_av:
     bench_av_live = [cur_av['lw'], cur_av['ld'], cur_av['ll']]
-    print()
-    print('百家基准即时盘: {}/{}'.format(bench_av_live[0], bench_av_live[1]), bench_av_live[2])
+    log.info()
+    log.info('百家基准即时盘: {}/{}'.format(bench_av_live[0], bench_av_live[1]), bench_av_live[2])
 
 # ---------- Step 19: 百家欧赔对比 ----------
 out.append('')
@@ -732,7 +738,7 @@ for m in step19_data:
     if match_odds_prefix(bench_av_live, [av['lw'], av['ld'], av['ll']]):
         step19_filtered.append(m)
 
-print('  百家匹配: {} 场'.format(len(step19_filtered)))
+log.info('  百家匹配: {} 场'.format(len(step19_filtered)))
 
 av_stats_19 = init_stats()
 bench_av_dir = dir_str3(cur_av['iw'],cur_av['id'],cur_av['il'],cur_av['lw'],cur_av['ld'],cur_av['ll']) if cur_av else ''
@@ -764,7 +770,7 @@ out.append('|------|---------|------|------|---------------|---------------|----
 bench_jc_live = None
 if cur_jc:
     bench_jc_live = [cur_jc['lw'], cur_jc['ld'], cur_jc['ll']]
-    print('  竞彩基准即时盘: {}/{} {}'.format(bench_jc_live[0], bench_jc_live[1], bench_jc_live[2]))
+    log.info('  竞彩基准即时盘: {}/{} {}'.format(bench_jc_live[0], bench_jc_live[1], bench_jc_live[2]))
 
 jc_filtered_20 = []
 for m in step19_data:
@@ -774,7 +780,7 @@ for m in step19_data:
     if match_odds_prefix(bench_jc_live, [jc['lw'], jc['ld'], jc['ll']]):
         jc_filtered_20.append(m)
 
-print('  竞彩匹配: {} 场'.format(len(jc_filtered_20)))
+log.info('  竞彩匹配: {} 场'.format(len(jc_filtered_20)))
 
 jc_stats_20 = init_stats()
 bench_jc_dir = dir_str3(cur_jc['iw'],cur_jc['id'],cur_jc['il'],cur_jc['lw'],cur_jc['ld'],cur_jc['ll']) if cur_jc else ''
@@ -806,7 +812,7 @@ out.append('|------|---------|------|------|---------------|---------------|----
 bench_iw_live = None
 if cur_iw:
     bench_iw_live = [cur_iw['lw'], cur_iw['ld'], cur_iw['ll']]
-    print('  IW基准即时盘: {}/{} {}'.format(bench_iw_live[0], bench_iw_live[1], bench_iw_live[2]))
+    log.info('  IW基准即时盘: {}/{} {}'.format(bench_iw_live[0], bench_iw_live[1], bench_iw_live[2]))
 
 iw_filtered_21 = []
 for m in step19_data:
@@ -816,7 +822,7 @@ for m in step19_data:
     if match_odds_prefix(bench_iw_live, [iw['lw'], iw['ld'], iw['ll']]):
         iw_filtered_21.append(m)
 
-print('  IW匹配: {} 场'.format(len(iw_filtered_21)))
+log.info('  IW匹配: {} 场'.format(len(iw_filtered_21)))
 
 iw_stats_21 = init_stats()
 bench_iw_dir = dir_str3(cur_iw['iw'],cur_iw['id'],cur_iw['il'],cur_iw['lw'],cur_iw['ld'],cur_iw['ll']) if cur_iw else ''
@@ -861,22 +867,22 @@ for line in out:
 if OUTPUT_PATH:
     with open(OUTPUT_PATH, 'w', encoding='utf-8') as f:
         f.write('\n'.join(step8_lines))
-    print('输出(Step8): ' + OUTPUT_PATH)
+    log.info('输出(Step8): ' + OUTPUT_PATH)
 
 if OUTPUT_PATH_1923:
     os.makedirs(os.path.dirname(OUTPUT_PATH_1923), exist_ok=True)
     with open(OUTPUT_PATH_1923, 'w', encoding='utf-8') as f:
         f.write('\n'.join(step19_23_lines))
-    print('输出(Step19-23): ' + OUTPUT_PATH_1923)
+    log.info('输出(Step19-23): ' + OUTPUT_PATH_1923)
 
 # 获取当前比赛让球指数基准
 bench_jc_rq_live = None
 if cur_jc:
     bench_jc_rq_live = [cur_jc['lw'], cur_jc['ld'], cur_jc['ll']]
-    print('  让球基准即时盘: {}/{} {}'.format(bench_jc_rq_live[0], bench_jc_rq_live[1], bench_jc_rq_live[2]))
+    log.info('  让球基准即时盘: {}/{} {}'.format(bench_jc_rq_live[0], bench_jc_rq_live[1], bench_jc_rq_live[2]))
 
 # 先为所有历史比赛抓取让球数据
-print('  抓取历史让球数据 ({} 场)...'.format(len(step19_data)))
+log.info('  抓取历史让球数据 ({} 场)...'.format(len(step19_data)))
 step19_with_rq = []
 for i, m in enumerate(step19_data, 1):
     fid = m.get('fid', '')
@@ -907,8 +913,8 @@ for i, m in enumerate(step19_data, 1):
         step19_with_rq.append({**m, 'jc_rq': jc_rq})
     time.sleep(0.2)
     if i % 30 == 0:
-        print('  已抓取 {}/{} 场...'.format(i, len(step19_data)))
-print('  有让球数据: {} 场'.format(len(step19_with_rq)))
+        log.info('  已抓取 {}/{} 场...'.format(i, len(step19_data)))
+log.info('  有让球数据: {} 场'.format(len(step19_with_rq)))
 
 # 独立筛选：让球即时盘 vs 历史让球终盘
 rq_filtered_23 = []
@@ -917,7 +923,7 @@ for m in step19_with_rq:
     if match_odds_prefix(bench_jc_rq_live, [jc_rq['lw'], jc_rq['ld'], jc_rq['ll']]):
         rq_filtered_23.append(m)
 
-print('  让球匹配: {} 场'.format(len(rq_filtered_23)))
+log.info('  让球匹配: {} 场'.format(len(rq_filtered_23)))
 
 rq_stats_23 = init_stats()
 bench_jc_dir = dir_str3(cur_jc['iw'],cur_jc['id'],cur_jc['il'],cur_jc['lw'],cur_jc['ld'],cur_jc['ll']) if cur_jc else ''
@@ -935,11 +941,11 @@ out.append('')
 out.append('### 盘路匹配度统计')
 out.append(stats_summary(rq_stats_23))
 
-print()
-print('='*60)
-print('完成！')
-print('  Step 8: {} 场'.format(len(step8_data)))
-print('  Step 19(百家): {} 场'.format(len(step19_filtered)))
-print('  Step 20(竞彩): {} 场'.format(len(jc_filtered_20)))
-print('  Step 21(IW):   {} 场'.format(len(iw_filtered_21)))
-print('  Step 23(让球): {} 场'.format(len(rq_filtered_23)))
+log.info()
+log.info('='*60)
+log.info('完成！')
+log.info('  Step 8: {} 场'.format(len(step8_data)))
+log.info('  Step 19(百家): {} 场'.format(len(step19_filtered)))
+log.info('  Step 20(竞彩): {} 场'.format(len(jc_filtered_20)))
+log.info('  Step 21(IW):   {} 场'.format(len(iw_filtered_21)))
+log.info('  Step 23(让球): {} 场'.format(len(rq_filtered_23)))

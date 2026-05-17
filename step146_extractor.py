@@ -222,14 +222,14 @@ try:
             if MACAU_LINE: meta_up['macau_line'] = MACAU_LINE
             with open(meta_file, 'w', encoding='utf-8') as mf:
                 json.dump(meta_up, mf, ensure_ascii=False, indent=2)
-            print('[OK] Team IDs: home={}, away={}, macau_line={}'.format(HOME_ID, AWAY_ID, MACAU_LINE))
+            log.info('Team IDs: home=%s, away=%s, macau_line=%s' % (HOME_ID, AWAY_ID, MACAU_LINE))
         else:
-            print('[WARN] meta.json 不存在')
+            log.warning('meta.json 不存在')
     else:
-        print('[WARN] 球队ID和澳门亚盘全部提取失败！')
+        log.warning('球队ID和澳门亚盘全部提取失败！')
 
 except Exception as e:
-    print('[WARN] 提取球队ID/澳门亚盘失败: {}'.format(e))
+    log.warning('提取球队ID/澳门亚盘失败: %s' % e)
 
 # ============================================================
 # STEP 4: 让球基础
@@ -343,16 +343,16 @@ if OUT1:
     os.makedirs(os.path.dirname(os.path.abspath(OUT1)), exist_ok=True)
     with open(OUT1, 'w', encoding='utf-8') as f:
         f.write('\n'.join(lines1))
-    print('[OK] Step 1: {}'.format(OUT1))
+    log.info('Step 1: %s' % OUT1.split(os.sep)[-1] if os.sep in OUT1 else OUT1)
 
 if OUT4:
     os.makedirs(os.path.dirname(os.path.abspath(OUT4)), exist_ok=True)
     with open(OUT4, 'w', encoding='utf-8') as f:
         f.write('\n'.join(lines4))
-    print('[OK] Step 4: {}'.format(OUT4))
+    log.info('Step 4: %s' % OUT4.split(os.sep)[-1] if os.sep in OUT4 else OUT4)
 
 if OUT6:
     os.makedirs(os.path.dirname(os.path.abspath(OUT6)), exist_ok=True)
     with open(OUT6, 'w', encoding='utf-8') as f:
         f.write('\n'.join(lines6))
-    print('[OK] Step 6: {}'.format(OUT6))
+    log.info('Step 6: %s' % OUT6.split(os.sep)[-1] if os.sep in OUT6 else OUT6)

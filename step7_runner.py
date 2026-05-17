@@ -4,8 +4,9 @@
 用法1: python step7_runner.py <fid> <league> [output_path]
 用法2: python step7_runner.py <match_dir>  (自动从 meta.json 读取 fid/league)
 """
-import sys, os, io, re, time, json
+import sys, os, io, re, time, json, traceback
 from urllib.parse import quote
+from _log_util import setup_logger
 
 # 支持两种调用方式：match_dir 模式 或 参数模式
 if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]):
@@ -28,6 +29,17 @@ else:
 # Redirect output to file
 os.makedirs(os.path.dirname(OUTPUT), exist_ok=True)
 sys.stdout = io.TextIOWrapper(open(OUTPUT, 'wb'), encoding='utf-8', errors='replace')
+
+# 初始化日志
+LOG_DIR = None
+if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]):
+    # match_dir 模式：日志写到 match_dir 的父级 logs/
+    LOG_DIR = os.path.join(os.path.dirname(os.path.normpath(sys.argv[1])), 'logs')
+else:
+    # 参数模式：日志写到当前目录
+    LOG_DIR = 'jingcai/logs'
+
+log = setup_logger('step7', LOG_DIR, console=False)
 
 import requests
 from bs4 import BeautifulSoup
@@ -123,14 +135,14 @@ def fetch_same_odds_ajax(fid, cp, s1, s2):
         resp.encoding = 'gbk'
         text = resp.text
     except Exception as e:
-        print('  ⚠️ 访问same页面失败: %s' % e)
+        log.error('访问same页面失败: %s' % e)
         return []
     
     m_vs = re.search(r'vsdate[=:]\s*[\"\']?([^\"\'&,\s]+)', text)
     vsdate = m_vs.group(1) if m_vs else ''
     
-    print('正在获取相同盘口数据（使用ajax接口）...')
-    print('  盘口: %s | 水位: %s/%s | vsdate: %s' % (cp, s1, s2, vsdate))
+    log.info('正在获取相同盘口数据（ajax接口）...')
+    log.info('盘口: %s | 水位: %s/%s | vsdate: %s' % (cp, s1, s2, vsdate))
     
     # 调ajax
     params = {
@@ -146,15 +158,15 @@ def fetch_same_odds_ajax(fid, cp, s1, s2):
         r.encoding = 'gbk'
         
         if len(r.text) < 10:
-            print('  ⚠️ ajax返回空数据')
+            log.warning('ajax返回空数据')
             return []
         
         data = json.loads(r.text)
         rows_html = data.get('row', [])
-        print('  获取到 %d 场历史同赔数据' % len(rows_html))
+        log.info('获取到 %d 场历史同赔数据' % len(rows_html))
         
     except Exception as e:
-        print('  ⚠️ ajax请求失败: %s' % e)
+        log.error('ajax请求失败: %s' % e)
         return []
     
     # 解析每一行HTML
@@ -201,7 +213,7 @@ def fetch_same_odds_ajax(fid, cp, s1, s2):
         except:
             continue
     
-    print('  解析完成: %d 场' % len(matches))
+    log.info('解析完成: %d 场' % len(matches))
     return matches
 
 # ===== Main Process =====
@@ -217,12 +229,12 @@ try:
     html.encoding = 'gbk'
     text = html.text
 except Exception as e:
-    print('获取页面失败: %s' % e)
+    log.error('获取页面失败: %s' % e)
     sys.exit(1)
 
 macau_info = extract_macau_odds(text)
 if not macau_info:
-    print('未找到澳门盘口数据')
+    log.error('未找到澳门盘口数据')
     sys.exit(0)
 
 macau_cp_raw = macau_info['init_cp']
@@ -250,7 +262,7 @@ print()
 same_matches = fetch_same_odds_ajax(FID, macau_cp, s1, s2)
 
 if not same_matches:
-    print('未获取到同赔数据')
+    log.warning('未获取到同赔数据')
     sys.exit(0)
 
 # Stats
@@ -284,4 +296,5 @@ mid = sum(1 for r in same_matches if r.get('match_level') == '中')
 low = sum(1 for r in same_matches if r.get('match_level') == '低')
 print('盘路匹配度：高%d 中%d 低%d' % (high, mid, low))
 print()
+log.info('完成 - 共 %d 场, 胜率 %.1f%%' % (total, win/total*100 if total else 0))
 print('数据来源：ajax接口（替代agent-browser）')

@@ -32,6 +32,12 @@ else:
     FID = sys.argv[4] if len(sys.argv) > 4 else '1362643'
     OUTPUT_PATH = sys.argv[5] if len(sys.argv) > 5 else 'C:/Users/lianjie/.openclaw/workspace/jingcai/tasks/2026-04-27/step24_002.txt'
 
+
+from _log_util import setup_logger
+LOG_DIR = None
+if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]):
+    LOG_DIR = os.path.join(os.path.dirname(os.path.normpath(sys.argv[1])), 'logs')
+log = setup_logger('step24', LOG_DIR)
 import requests, re, json, time
 from bs4 import BeautifulSoup
 from datetime import datetime
@@ -319,7 +325,7 @@ def gen_step19_output(now, league, match_data, cur_jc, cur_iw, cur_av,
     return out
 
 # ============ 获取当前比赛基准盘路 ============
-print('获取当前比赛基准盘路...')
+log.info('获取当前比赛基准盘路...')
 cur_jc = cur_iw = cur_av = cur_rq = None
 try:
     r = sess.get('https://odds.500.com/fenxi/ouzhi-{}.shtml'.format(FID), timeout=10)
@@ -347,7 +353,7 @@ try:
     if cur_iw: print('  IWC盘路: {}'.format(dir_str3(*cur_iw)))
     if cur_av: print('  百家盘路: {}'.format(dir_str3(*cur_av)))
 except Exception as e:
-    print('  欧赔错误: {}'.format(e))
+    log.info('  欧赔错误: {}'.format(e))
 
 # 获取让球盘路
 try:
@@ -378,8 +384,8 @@ bench_av_dir = dir_str3(*cur_av) if cur_av else ''
 bench_rq_dir = dir_str3(*cur_rq) if cur_rq else ''
 
 # ============ 获取整个联赛所有比赛 ============
-print()
-print('获取整个联赛比赛...')
+log.info()
+log.info('获取整个联赛比赛...')
 
 # 获取联赛名称和球队列表
 league_name = None
@@ -394,7 +400,7 @@ try:
             gbname = d.get('SIMPLEGBNAME', '')
             if not league_name and gbname:
                 league_name = gbname
-                print('  联赛名称: {}'.format(league_name))
+                log.info('  联赛名称: {}'.format(league_name))
             # Get ALL team IDs from first page (not filtered by league)
             team_ids.add(str(d.get('HOMETEAMID', '')))
             team_ids.add(str(d.get('AWAYTEAMID', '')))
@@ -402,7 +408,7 @@ try:
 except: pass
 team_ids.discard('')
 team_ids = sorted(list(team_ids))
-print('  联赛球队: {} 支'.format(len(team_ids)))
+log.info('  联赛球队: {} 支'.format(len(team_ids)))
 
 # 获取所有比赛 - use team_ids filtering (not league name comparison)
 all_matches = []
@@ -436,11 +442,11 @@ for i, team_id in enumerate(team_ids, 1):
     except: pass
     time.sleep(0.2)
 
-print('  同联赛: {} 场 (去重后)'.format(len(all_matches)))
+log.info('  同联赛: {} 场 (去重后)'.format(len(all_matches)))
 
 # ============ 获取每场比赛的欧赔+让球数据 ============
-print()
-print('获取欧赔+让球数据...')
+log.info()
+log.info('获取欧赔+让球数据...')
 
 match_data = []
 for i, m in enumerate(all_matches, 1):
@@ -526,15 +532,15 @@ for i, m in enumerate(all_matches, 1):
     except: pass
     time.sleep(0.2)
 
-print('  有效数据: {} 场'.format(len(match_data)))
+log.info('  有效数据: {} 场'.format(len(match_data)))
 
 # ============ 盘路完全匹配分析 ============
-print()
-print('盘路完全匹配分析...')
-print('  竞彩欧赔基准: {}'.format(bench_jc_dir))
-print('  IWC基准: {}'.format(bench_iw_dir))
-print('  百家基准: {}'.format(bench_av_dir))
-print('  让球基准: {}'.format(bench_rq_dir))
+log.info()
+log.info('盘路完全匹配分析...')
+log.info('  竞彩欧赔基准: {}'.format(bench_jc_dir))
+log.info('  IWC基准: {}'.format(bench_iw_dir))
+log.info('  百家基准: {}'.format(bench_av_dir))
+log.info('  让球基准: {}'.format(bench_rq_dir))
 
 # 统计
 jc_match = []
@@ -577,11 +583,11 @@ if 'MATCH_DIR' in dir() and os.path.isfile(os.path.join(MATCH_DIR, 'meta.json'))
     except:
         pass
 
-print('  竞彩欧赔匹配: {} 场'.format(len(jc_match)))
-print('  IWC匹配: {} 场'.format(len(iw_match)))
-print('  百家匹配: {} 场'.format(len(av_match)))
-print('  让球匹配: {} 场'.format(len(rq_match)))
-print('  至少1项匹配: {} 场'.format(len(all_match)))
+log.info('  竞彩欧赔匹配: {} 场'.format(len(jc_match)))
+log.info('  IWC匹配: {} 场'.format(len(iw_match)))
+log.info('  百家匹配: {} 场'.format(len(av_match)))
+log.info('  让球匹配: {} 场'.format(len(rq_match)))
+log.info('  至少1项匹配: {} 场'.format(len(all_match)))
 
 # ============ 输出 ============
 out = []
@@ -699,12 +705,12 @@ if 'MATCH_DIR' in dir():
     with open(CACHE_PATH, 'w', encoding='utf-8') as f:
         json.dump(fid_cache, f, ensure_ascii=False, indent=2)
 
-print()
-print('='*60)
-print('完成！')
-print('输出: ' + OUTPUT_PATH)
+log.info()
+log.info('='*60)
+log.info('完成！')
+log.info('输出: ' + OUTPUT_PATH)
 if 'STEP8_OUT' in dir():
-    print('同步输出(Step8): ' + STEP8_OUT)
-    print('同步输出(Step19-23): ' + STEP19_OUT)
+    log.info('同步输出(Step8): ' + STEP8_OUT)
+    log.info('同步输出(Step19-23): ' + STEP19_OUT)
 if 'CACHE_PATH' in dir():
-    print('赔率缓存(FID Cache): ' + CACHE_PATH)
+    log.info('赔率缓存(FID Cache): ' + CACHE_PATH)
