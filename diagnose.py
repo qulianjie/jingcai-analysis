@@ -168,7 +168,8 @@ def diagnose_step(step_key, meta, match_dir):
                             try:
                                 nums.append(float(s))
                             except:
-                                pass
+
+                                log.warn(f"[diag] 解析异常")
                         if len(nums) >= 6:
                             if step_key == 'step2':
                                 company_row = ('%.2f' % nums[0], '%.2f' % nums[1], '%.2f' % nums[2])

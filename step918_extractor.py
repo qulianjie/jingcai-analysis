@@ -56,7 +56,9 @@ def gd(a, b):
         fa, fb = float(a), float(b)
         if fb < fa - 0.01: return '\u2b07'
         elif fb > fa + 0.01: return '\u2b06'
-    except: pass
+    except:
+
+        log.warn(f"[step918] 解析异常")
     return '\u27a1'
 
 def dir_str3(iw, id_, il, lw, ld, ll):
@@ -97,7 +99,8 @@ def _load_fid_cache():
                 _FID_CACHE = json.load(f)
             return True
         except:
-            pass
+
+            log.warn(f"[step918] 解析异常")
     return False
 
 def _from_cache(fid, data_type):
@@ -134,7 +137,9 @@ def fetch_odds(fid, use_cache=True):
                 for idx in [3,4,5,6,7,8]:
                     val = tds[idx].get_text().strip().replace('\u00a0','').replace(' ','')
                     try: nums.append(float(val))
-                    except: pass
+                    except:
+
+                        log.warn(f"[step918] 解析异常")
                 if len(nums) < 6: continue
                 if td0 == '1':
                     jc = {k: '{:.2f}'.format(v) for k, v in zip(['iw','id','il','lw','ld','ll'], nums)}
@@ -165,7 +170,9 @@ def fetch_rangqiu(fid, use_cache=True):
                 for idx in [4,5,6,7,8,9]:
                     val = tds[idx].get_text().strip().replace('\u00a0','').replace(' ','')
                     try: nums.append(float(val))
-                    except: pass
+                    except:
+
+                        log.warn(f"[step918] 解析异常")
                 if len(nums) >= 6:
                     return {k: '{:.2f}'.format(v) for k, v in zip(['iw','id','il','lw','ld','ll'], nums)}
         return None
@@ -248,27 +255,7 @@ def filter3(all_data, team_id, ha_type, league_name, macau_line):
             } for d in filtered]
     return []
 
-def _league_match(src_league, target_league):
-    """联赛名匹配 — 使用 league_map.json 桥接竞彩简称和源站名称"""
-    if not src_league or not target_league:
-        return False
-    if src_league.strip() == target_league.strip():
-        return True
-    # 使用 league_map.json 桥接
-    try:
-        import os as _os
-        import json as _json
-        map_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'league_map.json')
-        with open(map_path, 'r', encoding='utf-8') as f:
-            lmap = _json.load(f)
-        # 找到 src_league 所在的分组
-        for key, aliases in lmap.items():
-            all_names = [key] + aliases
-            if src_league in all_names and target_league in all_names:
-                return True
-    except:
-        pass
-    return False
+from _league_util import _league_match
 
 # ======================== MAIN ========================
 

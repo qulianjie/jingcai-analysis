@@ -6,6 +6,8 @@
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const log = require('./_log_util.js');
+log.setLogDir(path.join(__dirname, 'tasks', new Date().toISOString().slice(0,10), 'logs'));
 
 const NOTION_API_KEY = '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';
 const DATABASE_ID = '35491ad7-17ba-81cc-aa04-ce53f7234e17';

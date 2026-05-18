@@ -38,14 +38,8 @@ SCORES_HISTORY = os.path.join(SCRIPT_DIR, 'learnings', 'scores_history.json')
 TASKS_DIR = os.path.join(SCRIPT_DIR, 'tasks')
 
 
-def rd(path):
-    if not os.path.exists(path):
-        return ''
-    try:
-        with open(path, 'r', encoding='utf-8', errors='replace') as f:
-            return f.read()
-    except:
-        return ''
+from _util import rd, safe_json_load, ensure_utf8_stdout
+ensure_utf8_stdout()
 
 
 def extract_combo_from_report(report_content):
@@ -419,8 +413,8 @@ def build_match_map():
                                     'meta': meta,
                                 }
                     except:
-                        pass
-    
+
+                        log.warn(f"[learn] 解析异常")
     # 添加别名映射：md报告的"周六001"同时映射到"001"
     for key, val in list(match_map.items()):
         if key.startswith('周') and len(key) >= 4:
@@ -503,8 +497,8 @@ def analyze_feedback_patterns():
                     weekday_names = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
                     match_num = weekday_names[dt_obj.weekday()] + match_num[2:]
                 except:
-                    pass
-            
+
+                    log.warn(f"[learn] 解析异常")
             # 标准化 match_num：补齐编号为3位（"周五1"→"周五001"）
             if match_num and len(match_num) >= 3 and match_num[0] == '周':
                 prefix = match_num[:3]  # "周五" + 一位数字 or "周日" 等
@@ -755,8 +749,8 @@ def analyze_feedback_patterns():
                     bk_r = round(bk / 10) * 10
                     combo_tags.append(f'投注占比精确:胜{bm_r}%平{bp_r}%负{bk_r}%')
                 except:
-                    pass
-            
+
+                    log.warn(f"[learn] 解析异常")
             # --- 7. 庄家盈亏精确模式 ---
             # 从step26提取胜/平/负各自盈亏（赢钱/亏钱）
             s26_zw = s26_data.get('庄家胜盈亏', '')

@@ -69,7 +69,7 @@ for table in soup_ouzhi.find_all('table'):
         for idx in [3, 4, 5, 6, 7, 8]:
             val = tds[idx].get_text().strip().replace(chr(160), '')
             try: nums.append(float(val))
-            except: pass
+            except: log.warn(f'[欧赔] 数值转换失败: {val}')
         if len(nums) >= 6:
             if td0.isdigit():
                 all_companies.append({'row_num': int(td0), 'name': td1,
@@ -222,14 +222,14 @@ try:
             if MACAU_LINE: meta_up['macau_line'] = MACAU_LINE
             with open(meta_file, 'w', encoding='utf-8') as mf:
                 json.dump(meta_up, mf, ensure_ascii=False, indent=2)
-            log.info('Team IDs: home=%s, away=%s, macau_line=%s' % (HOME_ID, AWAY_ID, MACAU_LINE))
+            print('Team IDs: home=%s, away=%s, macau_line=%s' % (HOME_ID, AWAY_ID, MACAU_LINE))
         else:
-            log.warning('meta.json 不存在')
+            print('meta.json 不存在')
     else:
-        log.warning('球队ID和澳门亚盘全部提取失败！')
+        print('球队ID和澳门亚盘全部提取失败！')
 
 except Exception as e:
-    log.warning('提取球队ID/澳门亚盘失败: %s' % e)
+    print('提取球队ID/澳门亚盘失败: %s' % e)
 
 # ============================================================
 # STEP 4: 让球基础
@@ -250,7 +250,7 @@ for table in soup_rq.find_all('table'):
             for idx in [4, 5, 6, 7, 8, 9]:
                 val = tds[idx].get_text().strip().replace(chr(160), '')
                 try: nums.append(float(val))
-                except: pass
+                except: log.warn(f'[亚盘] 数值转换失败: {val}')
             if len(nums) >= 6:
                 rq_jc = {'handicap': td2, 'iw': nums[0], 'id': nums[1], 'il': nums[2],
                     'lw': nums[3], 'ld': nums[4], 'll': nums[5]}
@@ -343,16 +343,16 @@ if OUT1:
     os.makedirs(os.path.dirname(os.path.abspath(OUT1)), exist_ok=True)
     with open(OUT1, 'w', encoding='utf-8') as f:
         f.write('\n'.join(lines1))
-    log.info('Step 1: %s' % OUT1.split(os.sep)[-1] if os.sep in OUT1 else OUT1)
+    print('Step 1: %s' % OUT1.split(os.sep)[-1] if os.sep in OUT1 else OUT1)
 
 if OUT4:
     os.makedirs(os.path.dirname(os.path.abspath(OUT4)), exist_ok=True)
     with open(OUT4, 'w', encoding='utf-8') as f:
         f.write('\n'.join(lines4))
-    log.info('Step 4: %s' % OUT4.split(os.sep)[-1] if os.sep in OUT4 else OUT4)
+    print('Step 4: %s' % OUT4.split(os.sep)[-1] if os.sep in OUT4 else OUT4)
 
 if OUT6:
     os.makedirs(os.path.dirname(os.path.abspath(OUT6)), exist_ok=True)
     with open(OUT6, 'w', encoding='utf-8') as f:
         f.write('\n'.join(lines6))
-    log.info('Step 6: %s' % OUT6.split(os.sep)[-1] if os.sep in OUT6 else OUT6)
+    print('Step 6: %s' % OUT6.split(os.sep)[-1] if os.sep in OUT6 else OUT6)

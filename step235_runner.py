@@ -53,27 +53,7 @@ sess = requests.Session()
 sess.headers.update(HEADERS)
 sess.get('https://odds.500.com/', timeout=10)
 
-def _league_match(src_league, target_league):
-    """联赛名匹配 — 使用 league_map.json 桥接竞彩简称和源站名称"""
-    if not src_league or not target_league:
-        return False
-    if src_league.strip() == target_league.strip():
-        return True
-    # 使用 league_map.json 桥接
-    try:
-        import os as _os
-        import json as _json
-        map_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'league_map.json')
-        with open(map_path, 'r', encoding='utf-8') as f:
-            lmap = _json.load(f)
-        # 找到 src_league 所在的分组
-        for key, aliases in lmap.items():
-            all_names = [key] + aliases
-            if src_league in all_names and target_league in all_names:
-                return True
-    except:
-        pass
-    return False
+from _league_util import _league_match
 
 def dir_str(init_vals, live_vals):
     result = ''

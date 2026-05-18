@@ -2,6 +2,9 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+const log = require('./_log_util.js');
+log.setLogDir(path.join(__dirname, 'tasks', new Date().toISOString().slice(0,10), 'logs'));
+
 
 const API_KEY = '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';
 const DB_ID = '35491ad7-17ba-81cc-aa04-ce53f7234e17';
@@ -826,6 +829,30 @@ async function main() {
     const matchResults = await fetchMatchResults(targetDate);
     console.log(`获取到 ${Object.keys(matchResults).length} 场赛果`);
     
+    // ==== 存档比分到本地永久快照（避免源站数据过期丢失）====
+    const archiveFile = path.join(DATA_DIR, 'scores_archive.json');
+    let archive = {};
+    if (fs.existsSync(archiveFile)) {
+        try { archive = JSON.parse(fs.readFileSync(archiveFile, 'utf8')); } catch(e) {}
+    }
+    if (Object.keys(matchResults).length > 0) {
+        archive[targetDate] = matchResults;
+        fs.writeFileSync(archiveFile, JSON.stringify(archive, null, 2), 'utf8');
+        console.log(`📦 比分已存档: ${archiveFile} (${Object.keys(matchResults).length} 场)`);
+    }
+    
+    // ==== 同时更新历史汇总：把前几天的比分也补上（如果源站还能拿到）====
+    // 检查当前日期前后3天的存档是否完整，不完整时从当天的matchResults补充
+    if (Object.keys(matchResults).length > 0) {
+        const datesToPatch = {};
+        // 目标日期本身已经更新了，不用补
+        // 尝试补前一天和后一天的（如果当天抓到的比分实际属于其他日期）
+        for (const [mn, rs] of Object.entries(matchResults)) {
+            // matchResults key是比赛编号，不含日期，所以直接从当前targetDate推断
+            // 不做额外操作，保持简单：只写当天的
+        }
+    }
+    
     // 获取终盘赔率数据（从step文件提取即时赔率）
     const finalOdds = fetchFinalOdds(targetDate);
     console.log(`获取到 ${Object.keys(finalOdds).length} 场终盘赔率`);
@@ -941,8 +968,8 @@ async function main() {
             continue;
         }
         
-        // 如果已有完整反馈但缺少终盘赔率，只更新终盘赔率 + 补充比分（如果源站数据更新过）
-        if (hasExistingFeedback && !existingFinalOdds) {
+        // 新页面（无完整反馈）或缺少终盘赔率：补充终盘赔率 + 比分
+        if (!hasExistingFeedback || !existingFinalOdds) {
             try {
                 const updateProps = {};
                 if (matchOdds) {

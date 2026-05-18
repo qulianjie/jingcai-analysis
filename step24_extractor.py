@@ -55,7 +55,9 @@ def gd(a, b):
         fa, fb = float(a), float(b)
         if fb < fa - 0.01: return '\u2b07'  # ↓
         elif fb > fa + 0.01: return '\u2b06'  # ↑
-    except: pass
+    except:
+
+        log.warn(f"[step24] 解析异常")
     return '\u27a1'  # →
 
 def dir_str3(iw, id_, il, lw, ld, ll):
@@ -341,7 +343,9 @@ try:
             for idx in [3,4,5,6,7,8]:
                 val = clean_text(tds[idx].get_text())
                 try: nums.append(float(val))
-                except: pass
+                except:
+
+                    log.warn(f"[step24] 解析异常")
             if len(nums) < 6: continue
             if td0 == '1':
                 cur_jc = nums
@@ -369,14 +373,17 @@ try:
             for idx in [4,5,6,7,8,9]:
                 val = clean_text(tds[idx].get_text())
                 try: nums.append(float(val))
-                except: pass
+                except:
+
+                    log.warn(f"[step24] 解析异常")
             if len(nums) >= 6:
                 cur_rq = nums
                 break
         if cur_rq: break
     if cur_rq: print('  让球盘路: {}'.format(dir_str3(*cur_rq)))
-except: pass
+except:
 
+    log.warn(f"[step24] 解析异常")
 # 本场盘路基准
 bench_jc_dir = dir_str3(*cur_jc) if cur_jc else ''
 bench_iw_dir = dir_str3(*cur_iw) if cur_iw else ''
@@ -404,8 +411,12 @@ try:
             # Get ALL team IDs from first page (not filtered by league)
             team_ids.add(str(d.get('HOMETEAMID', '')))
             team_ids.add(str(d.get('AWAYTEAMID', '')))
-        except: pass
-except: pass
+        except:
+
+            log.warn(f"[step24] 解析异常")
+except:
+
+    log.warn(f"[step24] 解析异常")
 team_ids.discard('')
 team_ids = sorted(list(team_ids))
 log.info('  联赛球队: {} 支'.format(len(team_ids)))
@@ -438,8 +449,12 @@ for i, team_id in enumerate(team_ids, 1):
                     'score': '{}:{}'.format(d.get('HOMESCORE', 0), d.get('AWAYSCORE', 0)),
                     'result': d.get('lpl_on', '-'),
                 })
-            except: pass
-    except: pass
+            except:
+
+                log.warn(f"[step24] 解析异常")
+    except:
+
+        log.warn(f"[step24] 解析异常")
     time.sleep(0.2)
 
 log.info('  同联赛: {} 场 (去重后)'.format(len(all_matches)))
@@ -468,7 +483,9 @@ for i, m in enumerate(all_matches, 1):
                 for idx in [3,4,5,6,7,8]:
                     val = clean_text(tds[idx].get_text())
                     try: nums.append(float(val))
-                    except: pass
+                    except:
+
+                        log.warn(f"[step24] 解析异常")
                 if len(nums) < 6: continue
                 if td0 == '1': jc = nums
                 elif td0 == '6': iw = nums
@@ -489,13 +506,16 @@ for i, m in enumerate(all_matches, 1):
                     for idx in [4,5,6,7,8,9]:
                         val = clean_text(tds[idx].get_text())
                         try: nums.append(float(val))
-                        except: pass
+                        except:
+
+                            log.warn(f"[step24] 解析异常")
                     if len(nums) >= 6:
                         rq = nums
                         break
                 if rq: break
-        except: pass
-        
+        except:
+
+            log.warn(f"[step24] 解析异常")
         # 获取亚盘（yazhi）- 用于step8输出
         asian_data = None
         try:
@@ -518,8 +538,9 @@ for i, m in enumerate(all_matches, 1):
                     }
                     break
                 if asian_data: break
-        except: pass
+        except:
 
+            log.warn(f"[step24] 解析异常")
         match_data.append({
             **m,
             'jc': jc,
@@ -529,7 +550,9 @@ for i, m in enumerate(all_matches, 1):
             'asian': asian_data,
         })
         if i % 20 == 0: print('  已获取 {}/{} 场...'.format(i, len(all_matches)))
-    except: pass
+    except:
+
+        log.warn(f"[step24] 解析异常")
     time.sleep(0.2)
 
 log.info('  有效数据: {} 场'.format(len(match_data)))
@@ -581,8 +604,8 @@ if 'MATCH_DIR' in dir() and os.path.isfile(os.path.join(MATCH_DIR, 'meta.json'))
             m_meta = json.load(f)
         MACAU_LINE = m_meta.get('macau_line', '')
     except:
-        pass
 
+        log.warn(f"[step24] 解析异常")
 log.info('  竞彩欧赔匹配: {} 场'.format(len(jc_match)))
 log.info('  IWC匹配: {} 场'.format(len(iw_match)))
 log.info('  百家匹配: {} 场'.format(len(av_match)))

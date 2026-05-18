@@ -7,20 +7,21 @@
     python final_report_generator.py <match目录路径> [输出路径]
 """
 import os, sys, json, re
+from _log_util import setup_logger
+LOG_DIR = None
+if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]):
+    LOG_DIR = os.path.join(os.path.dirname(os.path.normpath(sys.argv[1])), 'logs')
+log = setup_logger('final_report', LOG_DIR)
+
 
 if len(sys.argv) < 2:
-    print('Usage: python final_report_generator.py <match_dir_path> [output_path]')
+    log.info('Usage: python final_report_generator.py <match_dir_path> [output_path]')
     sys.exit(1)
 
 MD = sys.argv[1]
 OUTPUT_PATH = sys.argv[2] if len(sys.argv) > 2 else None
 
-def rd(p):
-    try:
-        with open(p, 'r', encoding='utf-8') as f:
-            return f.read()
-    except:
-        return ''
+from _util import rd, re_find
 
 def strip_heading(text):
     """去掉步骤文件自带的重复标题（如 '# 第1步：欧盘基础信息'）"""
@@ -35,9 +36,7 @@ def strip_heading(text):
             lines = lines[1:]
     return '\n'.join(lines)
 
-def re_find(text, pattern):
-    m = re.search(pattern, text)
-    return m.group(1) if m else ''
+
 
 # Paths
 PARENT = os.path.dirname(MD)
@@ -140,12 +139,23 @@ for s25_name in ['step25_zhuangjia.json', 'step25_zhuangjia.md']:
 if not s25:
     s25 = rd(os.path.join(PARENT, 'step25_zhuangjia.json'))
 
-# Step 26
+# Step 26 (from merged step25 data)
 s26 = ''
-for s26_name in ['step26_profit_ratio.json', 'step26_profit_ratio.md']:
-    s26 = rd(os.path.join(MD, s26_name))
-    if s26:
-        break
+if s25 and s25.strip().startswith('{'):
+    try:
+        s25_data_full = json.loads(s25)
+        # Check if step26-style analysis was included (--full mode)
+        if 'data' in s25_data_full:
+            # Reconstruct analysis from step25 raw data
+            from step25_zhuangjia import analyze_profit_ratio as _analyze_pr
+            profit_analysis = _analyze_pr(s25_data_full['data'])
+            analysis = profit_analysis['analysis']
+            profit_ratio_data = profit_analysis['profit_ratio']
+            analysis['盈亏占比'] = {k: v.get('ratio', 0) for k, v in profit_ratio_data.items()}
+            analysis['投注占比'] = {k: v.get('bet_pct', '0') for k, v in profit_ratio_data.items()}
+            s26 = json.dumps({'analysis': analysis, 'profit_ratio': profit_ratio_data})
+    except:
+        pass
 
 # ============ Extract match info ============
 
@@ -223,7 +233,7 @@ now = datetime.now().strftime('%Y-%m-%d %H:%M')
 conclusion_md = '- 数据不足，无法生成结论'
 script_dir = os.path.dirname(os.path.abspath(__file__))
 conclusion_script = os.path.join(script_dir, 'final_conclusion_generator.py')
-print(f'[CONCLUSION] checking: {conclusion_script}')
+log.info(f'[CONCLUSION] checking: {conclusion_script}')
 if os.path.exists(conclusion_script):
     try:
         result = subprocess.run(
@@ -233,16 +243,16 @@ if os.path.exists(conclusion_script):
         )
         stdout_text = result.stdout.decode('utf-8', errors='replace').strip()
         stderr_text = result.stderr.decode('utf-8', errors='replace').strip()
-        print(f'[CONCLUSION] return={result.returncode}, stdout_len={len(stdout_text)}, stderr={stderr_text[:200]}')
+        log.info(f'[CONCLUSION] return={result.returncode}, stdout_len={len(stdout_text)}, stderr={stderr_text[:200]}')
         if result.returncode == 0 and stdout_text:
             conclusion_md = stdout_text
-            print(f'[CONCLUSION] OK, length={len(conclusion_md)}')
+            log.info(f'[CONCLUSION] OK, length={len(conclusion_md)}')
         else:
-            print(f'[CONCLUSION] FAIL or empty: {stderr_text[:200]}')
+            log.info(f'[CONCLUSION] FAIL or empty: {stderr_text[:200]}')
     except Exception as e:
-        print(f'[CONCLUSION] exception: {e}')
+        log.info(f'[CONCLUSION] exception: {e}')
 else:
-    print(f'[CONCLUSION] script not found')
+    log.info(f'[CONCLUSION] script not found')
 
 # Step 7 fallback
 if not s7.strip():
@@ -303,7 +313,8 @@ if s26 and s26.strip().startswith('{'):
         zhuang_map = {'胜': analysis.get('庄家胜盈亏', '-'), '平': analysis.get('庄家平盈亏', '-'), '负': analysis.get('庄家负盈亏', '-')}
         for label in ['胜', '平', '负']:
             ratio = str(profit_ratio.get(label, '-'))
-            pct = str(bet_pct.get(label, '-')) + '%'
+            pct_raw = str(bet_pct.get(label, '-'))
+            pct = pct_raw if pct_raw.endswith('%') else (pct_raw + '%')
             s26_content += '| {} | {} | {} | {} |\n'.format(label, ratio, pct, zhuang_map[label])
         s26_content += '\n### 综合分析\n'
         if analysis.get('庄家最看好'):
@@ -312,8 +323,8 @@ if s26 and s26.strip().startswith('{'):
             analysis.get('庄家胜盈亏', '-'),
             analysis.get('庄家平盈亏', '-'),
             analysis.get('庄家负盈亏', '-'))
-    except:
-        s26_content = '- 解析失败'
+    except Exception as e:
+        s26_content = f'- 解析失败: {e}'
 
 r = f"""# {match_num}_{hn}vs{an}
 
@@ -452,5 +463,5 @@ if not OUTPUT_PATH:
 with open(OUTPUT_PATH, 'w', encoding='utf-8') as f:
     f.write(r)
 
-print(f'OK: {OUTPUT_PATH}')
-print(f'Size: {os.path.getsize(OUTPUT_PATH)} bytes')
+log.info(f'OK: {OUTPUT_PATH}')
+log.info(f'Size: {os.path.getsize(OUTPUT_PATH)} bytes')

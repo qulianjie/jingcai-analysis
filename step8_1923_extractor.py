@@ -56,34 +56,16 @@ def _handicap_match(src_hcp, target_hcp):
         return False
     return src_hcp.strip() == target_hcp.strip()
 
-def _league_match(src_league, target_league):
-    """联赛名匹配 — 使用 league_map.json 桥接竞彩简称和源站名称"""
-    if not src_league or not target_league:
-        return False
-    if src_league.strip() == target_league.strip():
-        return True
-    # 使用 league_map.json 桥接
-    try:
-        import os as _os
-        import json as _json
-        map_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'league_map.json')
-        with open(map_path, 'r', encoding='utf-8') as f:
-            lmap = _json.load(f)
-        # 找到 src_league 所在的分组
-        for key, aliases in lmap.items():
-            all_names = [key] + aliases
-            if src_league in all_names and target_league in all_names:
-                return True
-    except:
-        pass
-    return False
+from _league_util import _league_match, LEAGUE_ID_MAP
 
 def gd(a, b):
     try:
         fa, fb = float(a), float(b)
         if fb < fa - 0.01: return '\u2b07'
         elif fb > fa + 0.01: return '\u2b06'
-    except: pass
+    except:
+
+        log.warn(f"[step8] 解析异常")
     return '\u27a1'
 
 def dir_str3(iw, id_, il, lw, ld, ll):
@@ -151,7 +133,8 @@ def _load_fid_cache():
                 _FID_CACHE = json.load(f)
             return True
     except:
-        pass
+
+        log.warn(f"[step8] 解析异常")
     return False
 
 def _from_cache(fid, dt):
@@ -169,50 +152,6 @@ def _from_cache(fid, dt):
         r[k] = '{:.2f}'.format(v)
     return r
 
-
-def _build_league_id_map():
-    """从 leagues_all.json + league_map.json 构建联赛ID映射表"""
-    import os as _os
-    json_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'leagues_all.json')
-    try:
-        with open(json_path, 'r', encoding='utf-8') as f:
-            leagues = json.load(f)
-        # 源站全称(截断格式) → ID: "英Premier League" → "9110"
-        direct = {}
-        for item in leagues:
-            direct[item['name']] = item['id']
-        
-        # 竞彩简称 → 源站列表: {"德甲": ["德甲", "德Bundesliga"], ...}
-        jingcai_map = {}
-        try:
-            from league_mapper import load_map as _load_map
-            jingcai_map = _load_map()
-        except:
-            pass
-        
-        # 竞彩简称 → ID
-        league_map = {}
-        for key, aliases in jingcai_map.items():
-            # 先试key本身
-            for src_name in [key] + aliases:
-                if src_name in direct:
-                    league_map[key] = direct[src_name]
-                    break
-                # 模糊匹配源站名（去掉英文名部分）
-                for dname, did in direct.items():
-                    if src_name[:2] in dname or dname[:2] in src_name:
-                        league_map[key] = did
-                        break
-                if key in league_map:
-                    break
-        
-        log.info('  联赛映射表加载: {} 个联赛 (从 leagues_all.json + league_map.json)'.format(len(leagues)))
-        return league_map
-    except Exception as e:
-        log.info('  ⚠️ 加载 leagues_all.json 失败: {}'.format(e))
-        return {}
-
-LEAGUE_ID_MAP = _build_league_id_map()
 
 # 获取联赛球队列表
 team_ids = set()
@@ -253,7 +192,8 @@ if is_cup:
                     except:
                         continue
             except:
-                pass
+
+                log.warn(f"[step8] 解析异常")
             time.sleep(0.1)
             if i % 10 == 0:
                 log.info('    已处理 {}/{} 支...'.format(i, len(round_teams)))
@@ -329,7 +269,9 @@ else:
                 try: data = json.loads(tr.get('data', '{}'))
                 except: continue
                 all_matches.append(data)
-        except: pass
+        except:
+
+            log.warn(f"[step8] 解析异常")
         time.sleep(0.2)
         if i % 4 == 0:
             log.info('  已获取 {}/{} 支球队...'.format(i, len(team_ids)))
@@ -425,8 +367,8 @@ for i, m in enumerate(handicap_matches[:15], 1):
                     break
                 if asian: break
         except:
-            pass
-    
+
+            log.warn(f"[step8] 解析异常")
     # Get ouzhi (优先缓存)
     ouzhi = None
     cj = _from_cache(fid, 'jc')
@@ -451,7 +393,9 @@ for i, m in enumerate(handicap_matches[:15], 1):
                     for idx in [3,4,5,6,7,8]:
                         val = clean_text(tds[idx].get_text())
                         try: nums.append(float(val))
-                        except: pass
+                        except:
+
+                            log.warn(f"[step8] 解析异常")
                     if len(nums) < 6: continue
                     company = {
                         'row': td0, 'name': td1,
@@ -464,14 +408,14 @@ for i, m in enumerate(handicap_matches[:15], 1):
                     elif '\u767e' in td1 or '\u5e73' in td1: av = company
             ouzhi = {'jc': jc, 'iw': iw, 'av': av, 'all': all_companies}
         except:
-            pass
-    
+
+            log.warn(f"[step8] 解析异常")
     if asian or ouzhi:
         step8_data.append({**m, 'asian': asian, 'ouzhi': ouzhi})
-        log.info('  #{} fid={}: {} vs {} {} 亚盘={}({}/{}) 欧赔={}'.format)
+        log.info('  #{} fid={}: {} vs {} {} 亚盘={}({}/{}) 欧赔={}'.format(
             i, fid, m['home'], m['away'], m['score'],
             asian['live_pan'] if asian else '-', asian['live_wh'] if asian else '-', asian['live_wa'] if asian else '-',
-            '有' if ouzhi else '无'))
+            '(' + str(len(ouzhi.get('jc',[]))) + ')' if ouzhi else '无'))
     time.sleep(0.3)
 
 # ============ 获取百家欧赔数据（Step 19-23） ============
@@ -497,7 +441,9 @@ for i, m in enumerate(league_matches, 1):
                 for idx in [3,4,5,6,7,8]:
                     val = clean_text(tds[idx].get_text())
                     try: nums.append(float(val))
-                    except: pass
+                    except:
+
+                        log.warn(f"[step8] 解析异常")
                 if len(nums) < 6: continue
                 company = {
                     'row': td0, 'name': td1,
@@ -535,7 +481,9 @@ try:
             for idx in [3,4,5,6,7,8]:
                 val = clean_text(tds[idx].get_text())
                 try: nums.append(float(val))
-                except: pass
+                except:
+
+                    log.warn(f"[step8] 解析异常")
             if len(nums) < 6: continue
             company = {
                 'row': td0, 'name': td1,
@@ -660,7 +608,9 @@ for i, m in enumerate(step8_data, 1):
                 for idx in [4,5,6,7,8,9]:
                     val = clean_text(tds[idx].get_text())
                     try: nums.append(float(val))
-                    except: pass
+                    except:
+
+                        log.warn(f"[step8] 解析异常")
                 if len(nums) >= 6:
                     jc_rq = {'iw': '{:.2f}'.format(nums[0]), 'id': '{:.2f}'.format(nums[1]), 'il': '{:.2f}'.format(nums[2]),
                              'lw': '{:.2f}'.format(nums[3]), 'ld': '{:.2f}'.format(nums[4]), 'll': '{:.2f}'.format(nums[5])}
@@ -902,13 +852,17 @@ for i, m in enumerate(step19_data, 1):
                     for idx in [4,5,6,7,8,9]:
                         val = clean_text(tds[idx].get_text())
                         try: nums.append(float(val))
-                        except: pass
+                        except:
+
+                            log.warn(f"[step8] 解析异常")
                     if len(nums) >= 6:
                         jc_rq = {'iw': '{:.2f}'.format(nums[0]), 'id': '{:.2f}'.format(nums[1]), 'il': '{:.2f}'.format(nums[2]),
                                  'lw': '{:.2f}'.format(nums[3]), 'ld': '{:.2f}'.format(nums[4]), 'll': '{:.2f}'.format(nums[5])}
                         break
                 if jc_rq: break
-        except: pass
+        except:
+
+            log.warn(f"[step8] 解析异常")
     if jc_rq:
         step19_with_rq.append({**m, 'jc_rq': jc_rq})
     time.sleep(0.2)

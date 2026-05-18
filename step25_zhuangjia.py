@@ -1,115 +1,116 @@
 # -*- coding: utf-8 -*-
 """
-竞彩第25步：庄家盈亏分析（必发指数）
-====================================
+竞彩第25步：庄家盈亏 + 投注占比分析
+=====================================
+（合并原 step25 + step26，消除重复请求）
 
-从 500.com 投注分析页面获取：
+从 500.com 投注分析页面 touzhu-{fid}.shtml 提取：
 - 投注占比（多/中/少）
 - 庄家盈亏（多/中/少）
+- 盈亏占比计算
+- 历史比分分布（czgb-{fid}.shtml）
 
-数据源：matches_data.json 中的 fid → https://odds.500.com/fenxi/touzhu-{fid}.shtml
+数据源：matches_data.json 中的 fid
 
 用法：
-    python step25_zhuangjia.py 2026-04-29
+    python step25_zhuangjia.py 2026-04-29       # 单日
+    python step25_zhuangjia.py 2026-04-29 --all   # 所有比赛（含step26分析）
 """
 
 import os, sys, re, json, io, requests
+from _log_util import setup_logger
+from _util import TOUZHU_URL, SCORE_URL, load_matches_data, load_matches_list, safe_json_dump
 from bs4 import BeautifulSoup
+
+LOG_DIR = None
+if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]):
+    LOG_DIR = os.path.join(os.path.dirname(os.path.normpath(sys.argv[1])), 'logs')
+log = setup_logger('step25', LOG_DIR)
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TASKS_DIR = os.path.join(BASE_DIR, 'tasks')
-TOUZHU_URL = 'https://odds.500.com/fenxi/touzhu-{fid}.shtml'
+
+# 阈值
+VOLUME_THRESHOLDS = [10000, 100000]     # 成交量：少<1万<中<10万<多
+PROFIT_THRESHOLDS = [50000, 300000]     # 庄家盈亏：少<5万<中<30万<多
+BET_PCT_THRESHOLDS = [20, 40]           # 投注占比：少<20%<中<40%<多
+
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+}
 
 
-def load_matches_data(date_str):
-    """读取matches_data.json获取fid"""
-    # 优先找 tasks/{date}/matches_data.json，其次 tasks/{date}/data/matches_data.json
-    data_file = os.path.join(TASKS_DIR, date_str, 'matches_data.json')
-    if not os.path.exists(data_file):
-        data_file = os.path.join(TASKS_DIR, date_str, 'data', 'matches_data.json')
-    if not os.path.exists(data_file):
-        return {}
-    with open(data_file, 'rb') as f:
-        raw = f.read().decode('utf-8')
-    
-    data = json.loads(raw)
-    fid_map = {}  # {matchnum: fid}
-    for group_key in data.get('groups', {}):
-        group = data['groups'][group_key]
-        for m in group.get('matches', []):
-            num = m.get('matchnum', '')
-            fid = m.get('fid', '')
-            if num and fid:
-                fid_map[num] = fid
-    return fid_map
-
+# ============ 网络提取 ============
 
 def parse_zhuangjia_data(fid):
-    """从500.com投注分析页面解析庄家盈亏数据"""
+    """从 500.com 投注分析页面解析庄家盈亏和投注占比数据"""
     url = TOUZHU_URL.format(fid=fid)
     
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-    }
-    
     try:
-        resp = requests.get(url, headers=headers, timeout=15)
+        resp = requests.get(url, headers=HEADERS, timeout=15)
         resp.encoding = 'gb2312'
-        text = resp.text
-        
-        # 提取投注分布和庄家盈亏
-        # 页面文本格式: 水户蜀葵3.5625.9%-25.2%4.1230,460-32,101--3-4平局3.1429.4%-5.0%3.4546,014754,037--8382町田泽维亚2.0744.6%-69.7%2.16636,311-461,647-56-51
-        # 提取: 赔率 投注占比 成交量 庄家盈亏
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        text = soup.get_text()
         
         result = {}
-        
-        # 用BeautifulSoup辅助解析
-        soup = BeautifulSoup(text, 'html.parser')
-        full_text = soup.get_text()
-        
-        # 从文本中提取投注分布三行
-        # 格式: 主胜/客队 赔率 投注占比 资金占比 赔率 成交量 庄家盈亏
-        patterns = [
-            ('主胜', r'(?:主胜|[\u4e00-\u9fff]{2,4})\s*([\d.]+)\s*(\d+\.?\d*)%\s*(?:-|–)\s*(\d+\.?\d*)%\s*([\d.]+)\s*([\d,]+)\s*(-?[\d,]+)'),
-            ('平局', r'平\s*([\d.]+)\s*(\d+\.?\d*)%\s*(?:-|–)\s*(\d+\.?\d*)%\s*([\d.]+)\s*([\d,]+)\s*(-?[\d,]+)'),
-            ('客胜', r'(?:客胜|[\u4e00-\u9fff]{2,4})\s*([\d.]+)\s*(\d+\.?\d*)%\s*(?:-|–)\s*(\d+\.?\d*)%\s*([\d.]+)\s*([\d,]+)\s*(-?[\d,]+)'),
-        ]
-        
-        # 更简单的方法：直接提取所有关键数字块
-        # 格式示例: 3.56 25.9% 25.2% 4.1 230,460 -32,101
-        # 三行分别对应主胜/平局/客胜
-        
-        # 从完整文本中提取包含赔率和百分比的数据块
-        # 查找模式: 数字.数字 数字% 数字% 数字.数字 数字,数字 负数
         data_pattern = r'([\d.]+)\s*(\d+\.?\d*)%\s*(?:-|–)\s*(\d+\.?\d*)%\s*([\d.]+)\s*([\d,]+)\s*(-?[\d,]+)'
-        matches = re.findall(data_pattern, full_text)
+        matches = re.findall(data_pattern, text)
         
         labels = ['主胜', '平局', '客胜']
         for i, m in enumerate(matches[:3]):
             label = labels[i] if i < 3 else f'unknown_{i}'
+            profit_raw = m[5]
             result[label] = {
                 'odds': m[0],
                 'bet_pct': m[1],
                 'fund_pct': m[2],
                 'sp_odds': m[3],
                 'volume': m[4],
-                'profit': m[5].replace('-', ''),
+                'profit_raw': profit_raw,
+                'profit': int(profit_raw.replace(',', '').replace('-', '')) if profit_raw else 0,
+                'profit_dir': not profit_raw.startswith('-'),  # True=庄家赚钱(正数), False=庄家亏钱(负数)
             }
-        
-        # 提取庄家盈亏指数
-        # 格式: --3-4, --8382, -56-51
-        profit_pattern = r'(?:-|–)\s*(\d+)\s*(?:-|–)\s*(\d+)'
-        profit_matches = re.findall(profit_pattern, full_text)
-        
         return result
     except Exception as e:
-        print(f'  [WARN] 解析fid={fid}失败: {e}')
+        log.warning(f'[step25] touzhu-{fid} 解析失败: {e}')
         return {}
 
+
+def parse_score_history(fid):
+    """从 500.com 比分统计页面获取历史比分分布"""
+    url = SCORE_URL.format(fid=fid)
+    
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=15)
+        resp.encoding = 'gb2312'
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        
+        score_dist = {}
+        tables = soup.find_all('table')
+        for table in tables:
+            rows = table.find_all('tr')
+            for row in rows[1:]:
+                cols = row.find_all(['td', 'th'])
+                if len(cols) >= 3:
+                    try:
+                        score = cols[0].get_text().strip()
+                        count = cols[1].get_text().strip()
+                        pct = cols[2].get_text().strip()
+                        if score and count and '%' in pct:
+                            score_dist[score] = {'count': count, 'pct': pct}
+                    except:
+                        pass
+        return score_dist
+    except:
+        log.warning(f'[step25] czgb-{fid} 解析失败')
+        return {}
+
+
+# ============ 分类分析 ============
 
 def classify_value(value, thresholds):
     """分类：多/中/少"""
@@ -125,101 +126,204 @@ def classify_value(value, thresholds):
         return '少'
 
 
-def run_analysis(date_str):
-    """运行第25步分析"""
+def analyze_profit_ratio(profit_data):
+    """计算盈亏占比和庄家意向"""
+    if not profit_data:
+        return {}
+    
+    total_abs = sum(info.get('profit', 0) for info in profit_data.values())
+    
+    profit_ratio = {}
+    if total_abs > 0:
+        for label, info in profit_data.items():
+            ratio = round(info['profit'] / total_abs, 4) if total_abs > 0 else 0
+            profit_ratio[label] = {
+                'ratio': ratio,
+                'profit': info['profit'],
+                'bet_pct': info.get('bet_pct', '0'),
+                'volume': info.get('volume', '0'),
+                'profit_raw': info.get('profit_raw', ''),
+            }
+    
+    # 庄家方向分析
+    zhuang_win = profit_data.get('主胜', {}).get('profit_dir', None)
+    zhuang_draw = profit_data.get('平局', {}).get('profit_dir', None)
+    zhuang_lose = profit_data.get('客胜', {}).get('profit_dir', None)
+    
+    analysis = {
+        '庄家胜盈亏': '赢钱' if zhuang_win is True else ('亏钱' if zhuang_win is False else '未知'),
+        '庄家平盈亏': '赢钱' if zhuang_draw is True else ('亏钱' if zhuang_draw is False else '未知'),
+        '庄家负盈亏': '赢钱' if zhuang_lose is True else ('亏钱' if zhuang_lose is False else '未知'),
+        '盈亏占比': {},
+        '投注占比': {},
+    }
+    
+    for label, info in profit_ratio.items():
+        lc = '胜' if label == '主胜' else ('平' if label == '平局' else '负')
+        analysis['盈亏占比'][lc] = info['ratio']
+        analysis['投注占比'][lc] = info.get('bet_pct', '0')
+    
+    # 庄家最看好方向
+    win_dirs = {k: v for k, v in profit_data.items() if v.get('profit_dir', False)}
+    if win_dirs:
+        max_label = max(win_dirs.items(), key=lambda x: x[1]['profit'])
+        analysis['庄家最看好'] = max_label[0]
+    else:
+        lose_dirs = {k: v for k, v in profit_data.items() if not v.get('profit_dir', True)}
+        if lose_dirs:
+            min_label = min(lose_dirs.items(), key=lambda x: x[1]['profit'])
+            analysis['庄家最看好'] = min_label[0]
+        else:
+            analysis['庄家最看好'] = '未知'
+    
+    return {
+        'profit_ratio': profit_ratio,
+        'analysis': analysis,
+    }
+
+
+# ============ 匹配目录 ============
+
+def find_match_dir(date_str, match_num):
+    """按 matchnum 找到对应的 match 目录"""
+    data_dir = os.path.join(TASKS_DIR, date_str, 'data')
+    if not os.path.exists(data_dir):
+        return None
+    
+    for d in sorted(os.listdir(data_dir)):
+        dp = os.path.join(data_dir, d)
+        if not os.path.isdir(dp):
+            continue
+        mp = os.path.join(dp, 'meta.json')
+        if os.path.exists(mp):
+            try:
+                meta = json.load(open(mp, 'r', encoding='utf-8'))
+                if meta.get('matchnum', '') == match_num:
+                    return dp
+            except:
+                pass
+    return None
+
+
+# ============ 主流程 ============
+
+def run_analysis(date_str, run_full=False):
+    """运行第25步 + 第26步分析
+    
+    Args:
+        date_str: 日期 YYYY-MM-DD
+        run_full: True=同时跑 step26 的比分分析，False=只跑基础投注/庄家
+    """
     date_dir = os.path.join(TASKS_DIR, date_str)
     if not os.path.exists(date_dir):
-        print(f'[ERROR] 任务目录不存在: {date_dir}')
+        log.info(f'[ERROR] 任务目录不存在: {date_dir}')
         return
     
-    # 读取fid映射
-    fid_map = load_matches_data(date_str)
+    # 读取 fid 映射
+    fid_map = load_matches_data(date_str, TASKS_DIR)
     if not fid_map:
-        print('[ERROR] 未找到matches_data.json')
+        log.info('[ERROR] 未找到 matches_data.json')
         return
     
-    print(f'  找到 {len(fid_map)} 场比赛的fid')
+    log.info(f'  找到 {len(fid_map)} 场比赛的 fid')
     
-    # 阈值
-    volume_thresholds = [10000, 100000]  # 成交量：少<1万<中<10万<多
-    profit_thresholds = [50000, 300000]  # 庄家盈亏：少<5万<中<30万<多
-    bet_pct_thresholds = [20, 40]  # 投注占比：少<20%<中<40%<多
-    
-    data_dir = os.path.join(date_dir, 'data')
+    count25 = 0
+    count26 = 0
     
     for match_num in sorted(fid_map.keys()):
         fid = fid_map[match_num]
+        log.info(f'  处理 {match_num} (fid={fid})...')
         
-        print(f'  处理 {match_num} (fid={fid})...')
+        # 找到 match 目录
+        match_dir = find_match_dir(date_str, match_num)
+        if not match_dir:
+            match_dir = os.path.join(TASKS_DIR, date_str, 'data')
         
-        # 解析数据
+        # ======== 第25步：基础投注+庄家盈亏 ========
         raw_data = parse_zhuangjia_data(fid)
         
         if not raw_data:
-            print(f'    [WARN] 未解析到数据')
+            log.info(f'    [WARN] 无投注/庄家数据')
             continue
         
         # 分类
         labels = {}
         for label, info in raw_data.items():
             labels[label] = {
-                'bet_pct': classify_value(info.get('bet_pct', 0), bet_pct_thresholds),
-                'volume': classify_value(info.get('volume', 0), volume_thresholds),
-                'profit': classify_value(info.get('profit', 0), profit_thresholds),
-                'raw': info
+                'bet_pct': classify_value(info.get('bet_pct', 0), BET_PCT_THRESHOLDS),
+                'volume': classify_value(info.get('volume', 0), VOLUME_THRESHOLDS),
+                'profit': classify_value(info.get('profit', 0), PROFIT_THRESHOLDS),
+                'raw': info,
             }
         
-        # 保存
-        result = {
+        result25 = {
             'match_num': match_num,
             'fid': fid,
             'url': TOUZHU_URL.format(fid=fid),
             'data': raw_data,
-            'labels': {k: {kk: vv for kk, vv in v.items() if kk != 'raw'} for k, v in labels.items()}
+            'labels': {k: {kk: vv for kk, vv in v.items() if kk != 'raw'} for k, v in labels.items()},
         }
         
-        # 找到match目录（按match_num精确匹配）
-        match_dir = None
-        if os.path.exists(data_dir):
-            for d in sorted(os.listdir(data_dir)):
-                dp = os.path.join(data_dir, d)
-                if not os.path.isdir(dp):
-                    continue
-                # 精确匹配：先检查meta.json
-                mp = os.path.join(dp, 'meta.json')
-                if os.path.exists(mp):
-                    try:
-                        mm = json.load(open(mp, 'r', encoding='utf-8'))
-                        mn = mm.get('matchnum', '')
-                        if mn == match_num:
-                            match_dir = dp
-                            break
-                    except:
-                        pass
-        
-        if not match_dir:
-            match_dir = data_dir
-            print(f'    [WARN] 未找到{match_num}目录，数据写入data/根目录')
-        
         step25_file = os.path.join(match_dir, 'step25_zhuangjia.json')
-        with open(step25_file, 'w', encoding='utf-8') as f:
-            json.dump(result, f, ensure_ascii=False, indent=2)
+        safe_json_dump(result25, step25_file, indent=2)
+        log.info(f'    第25步已保存: {step25_file}')
+        count25 += 1
         
-        print(f'    已保存: {step25_file}')
-        
-        # 显示结果
         for label, info in labels.items():
             raw = info['raw']
-            print(f'    {label}: 赔率={raw.get("odds","?")} 投注占比={info["bet_pct"]}({raw.get("bet_pct","")}%) 成交量={info["volume"]} 庄家盈亏={info["profit"]}')
+            log.info(f'    {label}: 赔率={raw.get("odds","?")} 投注占比={info["bet_pct"]}({raw.get("bet_pct","")}%) 成交量={info["volume"]} 庄家盈亏={info["profit"]}')
+        
+        # ======== 第26步：盈亏占比 + 比分分布（可选项） ========
+        if run_full:
+            profit_analysis = analyze_profit_ratio(raw_data)
+            score_dist = parse_score_history(fid)
+            
+            result26 = {
+                'match_num': match_num,
+                'fid': fid,
+                'profit_data': raw_data,
+                'profit_ratio': profit_analysis['profit_ratio'],
+                'score_dist': score_dist,
+                'analysis': profit_analysis['analysis'],
+            }
+            
+            step26_file = os.path.join(match_dir, 'step26_profit_ratio.json')
+            safe_json_dump(result26, step26_file, indent=2)
+            log.info(f'    第26步已保存: {step26_file}')
+            count26 += 1
+            
+            a = profit_analysis['analysis']
+            log.info(f'    庄家盈亏: {a["庄家胜盈亏"]} / {a["庄家平盈亏"]} / {a["庄家负盈亏"]}')
+            log.info(f'    庄家最看好: {a["庄家最看好"]}')
+    
+    log.info(f'\n[OK] 第25步完成: {count25} 场比赛')
+    if run_full:
+        log.info(f'[OK] 第26步同步完成: {count26} 场比赛')
 
 
 if __name__ == '__main__':
     args = sys.argv[1:]
-    date = args[0] if args else ''
+    date = ''
+    run_full = False
+    
+    for a in args:
+        if a == '--all' or a == '--full':
+            run_full = True
+        elif a.startswith('2') and '-' in a:
+            date = a
+    
     if not date:
         from datetime import datetime, timedelta
         date = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
     
-    print(f'📊 第25步：庄家盈亏分析 - {date}\n')
-    run_analysis(date)
-    print('\n[OK] 第25步完成')
+    log.info(f'📊 第25步：庄家盈亏+投注占比分析 - {date}')
+    if run_full:
+        log.info(f'   [全量模式] 含盈亏占比+比分分布')
+    log.info('')
+    
+    run_analysis(date, run_full=run_full)
+    
+    log.info('')
+    if not run_full:
+        log.info(f'[HINT] 如需完整盈亏占比分析，请加 --all 参数')
+    log.info('[DONE]')

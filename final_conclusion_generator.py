@@ -8,12 +8,18 @@
 4. 历史模式学习（从feedback.json学习高准确率组合）
 """
 import os, sys, re, json, math
+from _log_util import setup_logger
+LOG_DIR = None
+if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]):
+    LOG_DIR = os.path.join(os.path.dirname(os.path.normpath(sys.argv[1])), 'logs')
+log = setup_logger('final_concl', LOG_DIR)
+
 from datetime import datetime
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 MD = sys.argv[1] if len(sys.argv) > 1 else ''
 if not MD or not os.path.isdir(MD):
-    print('Usage: python final_conclusion_generator_v2.py <match_dir>')
+    log.info('Usage: python final_conclusion_generator_v2.py <match_dir>')
     sys.exit(1)
 
 # ============ Paths ============
@@ -26,15 +32,14 @@ G6 = os.path.join(MD, 'group06_baijia')
 
 FEEDBACK_FILE = os.path.join(os.path.dirname(__file__), 'learnings', 'feedback.json')
 
-def rd(path):
-    if not os.path.exists(path):
-        return ''
-    with open(path, 'r', encoding='utf-8', errors='replace') as f:
-        return f.read()
-
-def re_find(text, pattern):
-    m = re.search(pattern, text or '', re.IGNORECASE)
-    return m.group(1) if m else ''
+from _util import rd, re_find, ensure_utf8_stdout, safe_json_load
+from conclusion_signals import (
+    analyze_europe_odds, analyze_same_odds, analyze_macau_asian,
+    analyze_home_team, analyze_away_team, analyze_baijia,
+    analyze_panlu_match, analyze_zhuangjia,
+    _wilson, _bayesian, _trust_to_factor
+)
+ensure_utf8_stdout()
 
 # ============ Read all step data ============
 s1 = rd(os.path.join(G1, 'step1_europe_base.txt')) or rd(os.path.join(G1, 'step01_europe_basic.md'))
@@ -108,9 +113,9 @@ def load_high_accuracy_patterns():
             patterns['handicap_accuracy'] = learned_v2.get('handicap_accuracy', {})
             patterns['prediction_consistency'] = learned_v2.get('prediction_consistency', {})
             patterns['_v2_loaded'] = True
-            print(f'[LEARN] 已加载 V2 学习数据: {learned_v2.get("total_matches", 0)}场, 版本 {learned_v2.get("version", "?")}')
+            log.info(f'[LEARN] 已加载 V2 学习数据: {learned_v2.get("total_matches", 0)}场, 版本 {learned_v2.get("version", "?")}')
         except Exception as e:
-            print(f'[LEARN] V2 学习数据加载失败: {e}')
+            log.info(f'[LEARN] V2 学习数据加载失败: {e}')
     
     # 回退加载 V1（兼容旧数据）
     learned_file = os.path.join(os.path.dirname(__file__), 'learnings', 'learned_patterns.json')
@@ -126,8 +131,8 @@ def load_high_accuracy_patterns():
                 patterns['prediction_consistency'] = learned.get('prediction_consistency', {})
                 patterns['betting_patterns'] = learned.get('betting_patterns', {})
         except:
-            pass
-    
+
+            log.warn(f"[final_concl] 解析异常")
     # Also load from feedback.json for combo analysis
     if not os.path.exists(FEEDBACK_FILE):
         return patterns
@@ -276,477 +281,40 @@ def load_high_accuracy_patterns():
     return patterns
 
 patterns = load_high_accuracy_patterns()
-print(f'[DEBUG] Loaded {len(patterns["high_accuracy_combos"])} high accuracy combos')
+log.info(f'[DEBUG] Loaded {len(patterns["high_accuracy_combos"])} high accuracy combos')
+# ============ Signal 9: 欧赔盘路组合匹配 ============
+# 分析>=2个欧赔盘路是否一致
+e1 = analyze_europe_odds(s1) if s1 else {}
+e2 = analyze_same_odds(s2, '竞彩') if s2 else {}
+e3 = analyze_same_odds(s3, 'IW') if s3 else {}
 
-# ============ Signal 1: 欧赔趋势（step1）============
-def analyze_europe_odds(text):
-    if not text:
-        return {'score': 0, 'total': 0, 'data': {}}
-    
-    # 从表格中提取竞彩官方数据
-    # 格式: | 竞彩官方 | 1.13 | 8.50 | 15.00 | 1.08 | 10.00 | 23.00 | ⬇⬆⬆ |
-    import re as re2
-    row_match = re2.search(r'竞彩官方\s*\|\s*(\d+\.\d+)\s*\|\s*(\d+\.\d+)\s*\|\s*(\d+\.\d+)\s*\|\s*(\d+\.\d+)\s*\|\s*(\d+\.\d+)\s*\|\s*(\d+\.\d+)', text)
-    
-    if not row_match:
-        # fallback: 初盘/终盘格式
-        initial = re_find(text, r'初盘.*?(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)')
-        final = re_find(text, r'终盘.*?(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)')
-        if not initial or not final:
-            return {'score': 0, 'total': 0, 'data': {}}
-        init_parts = [float(x) for x in initial.split()]
-        final_parts = [float(x) for x in final.split()]
-    else:
-        init_parts = [float(row_match.group(i)) for i in [1, 2, 3]]
-        final_parts = [float(row_match.group(i)) for i in [4, 5, 6]]
-    
-    home_change = final_parts[0] - init_parts[0]
-    draw_change = final_parts[1] - init_parts[1]
-    away_change = final_parts[2] - init_parts[2]
-    
-    score = 0
-    if home_change < -0.05:
-        score += 0.5
-    elif home_change > 0.05:
-        score -= 0.5
-    
-    if draw_change < -0.05:
-        score += 0.3
-    elif draw_change > 0.05:
-        score -= 0.3
-    
-    if away_change < -0.05:
-        score -= 0.5
-    elif away_change > 0.05:
-        score += 0.5
-    
-    return {
-        'score': max(-1, min(1, score)),
-        'total': 1,
-        'data': {
-            'home_change': home_change,
-            'draw_change': draw_change,
-            'away_change': away_change
-        }
-    }
+directions = []
+if e1.get('score', 0) > 0.2: directions.append('home')
+elif e1.get('score', 0) < -0.2: directions.append('away')
+if e2.get('score', 0) > 0.2: directions.append('home')
+elif e2.get('score', 0) < -0.2: directions.append('away')
+if e3.get('score', 0) > 0.2: directions.append('home')
+elif e3.get('score', 0) < -0.2: directions.append('away')
 
-# ============ Signal 2: 欧赔同赔（step2/3/5）============
-def analyze_same_odds(text, name):
-    if not text or '无同赔数据' in text:
-        return {'score': 0, 'total': 0, 'win_rate': 0, 'data': {}}
-    
-    # 提取当前联赛名（从step1或step6）
-    current_league = ''
-    league_match = re.search(r'当前联赛：\s*(.+)', text)
-    if league_match:
-        current_league = league_match.group(1).strip()
-    
-    # 从表格行中提取每场比赛，按盘路匹配度分层加权
-    # 表格格式: | 赛事 | 日期 | 对阵 | 赛果 | 初盘 | 终盘 | 盘路变化 | 盘路匹配度 | 联赛 |
-    rows = []
-    for line in text.split('\n'):
-        if '|' not in line or '---' in line or '赛事' in line:
-            continue
-        cells = [c.strip() for c in line.split('|') if c.strip()]
-        if len(cells) < 8:
-            continue
-        
-        # 赛果在第4列(索引3)
-        result = cells[3] if len(cells) > 3 else ''
-        if result not in ['胜', '平', '负']:
-            continue
-        
-        # 盘路匹配度在第8列(索引7)
-        panlu = cells[7] if len(cells) > 7 else '低'
-        
-        # 联赛在第9列(索引8)
-        league = cells[8] if len(cells) > 8 else ''
-        
-        rows.append({
-            'result': result,
-            'panlu': panlu,
-            'league': league.strip(),
-            'is_same_league': current_league and league.strip() == current_league
-        })
-    
-    if not rows:
-        # fallback: 从统计行提取
-        stats_match = re.search(r'胜(\d+)\s+平(\d+)\s+负(\d+)', text)
-        if stats_match:
-            wins = int(stats_match.group(1))
-            draws = int(stats_match.group(2))
-            losses = int(stats_match.group(3))
-            total = wins + draws + losses
-            win_rate = wins / total * 100 if total > 0 else 0
-            score = (win_rate - 50) / 50
-            return {
-                'score': max(-1, min(1, score)),
-                'total': total,
-                'win_rate': win_rate,
-                'data': {'wins': wins, 'draws': draws, 'losses': losses}
-            }
-        return {'score': 0, 'total': 0, 'win_rate': 0, 'data': {}}
-    
-    # 分层加权计分
-    # 权重: 高+同联赛=3, 高=2, 中+同联赛=1.5, 中=1, 低=0.5
-    tier_weights = {
-        ('高', True): 3.0,    # 盘路匹配度高 + 同联赛
-        ('高', False): 2.0,   # 盘路匹配度高
-        ('中', True): 1.5,    # 盘路匹配度中 + 同联赛
-        ('中', False): 1.0,   # 盘路匹配度中
-        ('低', True): 0.75,   # 盘路匹配度低 + 同联赛
-        ('低', False): 0.5,   # 盘路匹配度低
-    }
-    
-    weighted_home = 0  # 胜
-    weighted_draw = 0
-    weighted_away = 0  # 负
-    total_weight = 0
-    
-    for row in rows:
-        weight = tier_weights.get((row['panlu'], row['is_same_league']), 0.5)
-        total_weight += weight
-        
-        if row['result'] == '胜':
-            weighted_home += weight
-        elif row['result'] == '平':
-            weighted_draw += weight
-        elif row['result'] == '负':
-            weighted_away += weight
-    
-    if total_weight == 0:
-        return {'score': 0, 'total': len(rows), 'win_rate': 0, 'data': {}}
-    
-    # 计算加权胜率
-    weighted_win_rate = weighted_home / total_weight * 100
-    
-    # 分值: +1=全主胜, -1=全客胜, 0=均衡
-    score = (weighted_win_rate - 50) / 50
-    
-    return {
-        'score': max(-1, min(1, score)),
-        'total': len(rows),
-        'win_rate': weighted_win_rate,
-        'data': {
-            'weighted_home': weighted_home,
-            'weighted_draw': weighted_draw,
-            'weighted_away': weighted_away,
-            'total_weight': total_weight,
-            'tier_breakdown': {
-                '高+同联赛': sum(1 for r in rows if r['panlu']=='高' and r['is_same_league']),
-                '高': sum(1 for r in rows if r['panlu']=='高' and not r['is_same_league']),
-                '中+同联赛': sum(1 for r in rows if r['panlu']=='中' and r['is_same_league']),
-                '中': sum(1 for r in rows if r['panlu']=='中' and not r['is_same_league']),
-                '低': sum(1 for r in rows if r['panlu']=='低'),
-            }
-        }
-    }
+home_count = directions.count('home')
+away_count = directions.count('away')
+combo_score = 0
+combo_level = '无一致'
+if home_count >= 2:
+    combo_score = 0.3 + (home_count - 2) * 0.1
+    combo_level = f'{home_count}盘利好主'
+elif away_count >= 2:
+    combo_score = -0.3 - (away_count - 2) * 0.1
+    combo_level = f'{away_count}盘利好客'
 
-# ============ Signal 3: 澳门亚盘（step6/7/8）============
-def analyze_macau_asian(s6_text, s7_text, s8_text):
-    score = 0
-    total_matches = 0
-    win_rate = 0
-    
-    # step6: 基础亚盘
-    if s6_text:
-        # 提取盘口方向
-        if '主让' in s6_text:
-            score += 0.2
-        elif '客让' in s6_text:
-            score -= 0.2
-    
-    # step7: 澳门同赔
-    if s7_text:
-        # 尝试多种格式: "胜4 平0 负0" 或 "主胜.*?4" 或 "胜.*?4"
-        macau_match = re.search(r'胜(\d+)\s+平(\d+)\s+负(\d+)', s7_text)
-        if macau_match:
-            macau_wins = int(macau_match.group(1))
-            macau_draws = int(macau_match.group(2))
-            macau_losses = int(macau_match.group(3))
-        else:
-            macau_wins = int(re_find(s7_text, r'主胜.*?(\d+)') or '0')
-            macau_draws = int(re_find(s7_text, r'平.*?(\d+)') or '0')
-            macau_losses = int(re_find(s7_text, r'客胜.*?(\d+)') or '0')
-        macau_total = macau_wins + macau_draws + macau_losses
-        if macau_total > 0:
-            macau_win_rate = macau_wins / macau_total * 100
-            score += (macau_win_rate - 50) / 100 * 0.5
-            total_matches += macau_total
-            win_rate = macau_win_rate
-    
-    # step8: 同联赛同亚盘
-    if s8_text:
-        s8_match = re.search(r'胜(\d+)\s+平(\d+)\s+负(\d+)', s8_text)
-        if s8_match:
-            s8_wins = int(s8_match.group(1))
-            s8_draws = int(s8_match.group(2))
-            s8_losses = int(s8_match.group(3))
-        else:
-            s8_wins = int(re_find(s8_text, r'主胜.*?(\d+)') or '0')
-            s8_draws = int(re_find(s8_text, r'平.*?(\d+)') or '0')
-            s8_losses = int(re_find(s8_text, r'客胜.*?(\d+)') or '0')
-        s8_total = s8_wins + s8_draws + s8_losses
-        if s8_total > 0:
-            s8_win_rate = s8_wins / s8_total * 100
-            score += (s8_win_rate - 50) / 100 * 0.3
-            total_matches += s8_total
-    
-    return {
-        'score': max(-1, min(1, score)),
-        'total': total_matches,
-        'win_rate': win_rate,
-        'data': {'matches': total_matches}
-    }
-
-# ============ Signal 4: 主队主场（step9-13）============
-def analyze_home_team(text):
-    if not text:
-        return {'score': 0, 'total': 0, 'win_rate': 0}
-    
-    # 提取主场胜率
-    home_win_rate = float(re_find(text, r'胜率.*?(\d+(?:\.\d+)?)') or '0')
-    home_total = int(re_find(text, r'共.*?(\d+)') or '0')
-    
-    if home_total == 0:
-        return {'score': 0, 'total': 0, 'win_rate': 0}
-    
-    # 胜率>50%利好
-    score = (home_win_rate - 50) / 100
-    
-    return {
-        'score': max(-1, min(1, score)),
-        'total': home_total,
-        'win_rate': home_win_rate
-    }
-
-# ============ Signal 5: 客队客场（step14-18）============
-def analyze_away_team(text):
-    if not text:
-        return {'score': 0, 'total': 0, 'win_rate': 0}
-    
-    away_win_rate = float(re_find(text, r'胜率.*?(\d+(?:\.\d+)?)') or '0')
-    away_total = int(re_find(text, r'共.*?(\d+)') or '0')
-    
-    if away_total == 0:
-        return {'score': 0, 'total': 0, 'win_rate': 0}
-    
-    # 客队胜率高=主队利空
-    score = -(away_win_rate - 50) / 100
-    
-    return {
-        'score': max(-1, min(1, score)),
-        'total': away_total,
-        'win_rate': away_win_rate
-    }
-
-# ============ Signal 6: 百家对比（step19-23）============
-def analyze_baijia(text):
-    if not text:
-        return {'score': 0, 'total': 0}
-    
-    # 提取百家欧赔统计
-    bj_wins = int(re_find(text, r'主胜.*?(\d+)') or '0')
-    bj_draws = int(re_find(text, r'平.*?(\d+)') or '0')
-    bj_losses = int(re_find(text, r'客胜.*?(\d+)') or '0')
-    bj_total = bj_wins + bj_draws + bj_losses
-    
-    if bj_total == 0:
-        return {'score': 0, 'total': 0}
-    
-    # 主胜比例>50%利好
-    score = (bj_wins / bj_total - 0.5) * 2
-    
-    return {
-        'score': max(-1, min(1, score)),
-        'total': bj_total
-    }
-
-# ============ Signal 7: 盘路匹配汇总（step24）============
-def analyze_panlu_match(text):
-    if not text:
-        return {'score': 0, 'matched_dims': 0}
-    
-    # step24文件虽然扩展名为.json，但实际内容是Markdown文本
-    # 需要同时支持JSON和Markdown两种格式
-    # 尝试从文本中提取胜平负统计
-    wins = len(re.findall(r'[|\s]胜[|\s]', text))
-    draws = len(re.findall(r'[|\s]平[|\s]', text))
-    losses = len(re.findall(r'[|\s]负[|\s]', text))
-    
-    total = wins + draws + losses
-    if total > 0:
-        score = (wins - losses) / total
-        return {
-            'score': max(-1, min(1, score)),
-            'matched_dims': total,
-            'wins': wins, 'draws': draws, 'losses': losses
-        }
-    
-    # 回退：尝试JSON格式（旧版本兼容）
-    try:
-        data = json.loads(text)
-    except:
-        return {'score': 0, 'matched_dims': 0}
-    
-    # 统计匹配维度数
-    matched = 0
-    for key, val in data.items():
-        if 'match' in key.lower() and val:
-            matched += 1
-    
-    # 匹配维度≥3利好
-    score = min(1, matched / 5)
-    
-    return {
-        'score': score,
-        'matched_dims': matched,
-        'data': data
-    }
-
-# ============ Signal 8: 庄家盈亏（step25）============
-def analyze_zhuangjia(text):
-    if not text:
-        return {'score': 0, 'data': None, 'bet_diff': 0}
-    
-    try:
-        data = json.loads(text)
-    except:
-        return {'score': 0, 'data': None, 'bet_diff': 0}
-    
-    labels = data.get('labels', {})
-    data_section = data.get('data', {})
-    
-    if not labels:
-        return {'score': 0, 'data': None, 'bet_diff': 0}
-    
-    # 提取投注占比
-    home_bet = data_section.get('主胜', {}).get('bet_pct', '0')
-    draw_bet = data_section.get('平局', {}).get('bet_pct', '0')
-    away_bet = data_section.get('客胜', {}).get('bet_pct', '0')
-    
-    try:
-        home_bet_pct = float(home_bet)
-        draw_bet_pct = float(draw_bet)
-        away_bet_pct = float(away_bet)
-    except:
-        home_bet_pct = draw_bet_pct = away_bet_pct = 33.3
-    
-    # 投注占比差值（最高-最低）
-    bet_diff = max(home_bet_pct, draw_bet_pct, away_bet_pct) - min(home_bet_pct, draw_bet_pct, away_bet_pct)
-    
-    # 庄家盈亏
-    home_profit = data_section.get('主胜', {}).get('profit', '0')
-    draw_profit = data_section.get('平局', {}).get('profit', '0')
-    away_profit = data_section.get('客胜', {}).get('profit', '0')
-    
-    try:
-        home_profit_val = float(home_profit.replace(',', ''))
-        draw_profit_val = float(draw_profit.replace(',', ''))
-        away_profit_val = float(away_profit.replace(',', ''))
-    except:
-        home_profit_val = draw_profit_val = away_profit_val = 0
-    
-    # 逻辑：
-    # 1. 投注占比高但庄家盈利高 → 庄家看好该结果
-    # 2. 投注占比高但庄家亏损 → 该结果可能打不出（诱盘）
-    score = 0
-    
-    # 投注占比差值>15%说明有明显热度
-    if bet_diff > 15:
-        # 找出最热选项
-        max_bet = max(home_bet_pct, draw_bet_pct, away_bet_pct)
-        
-        if max_bet == home_bet_pct:
-            # 主胜最热
-            if home_profit_val > away_profit_val:
-                score += 0.4  # 庄家在主胜上盈利更多，利好主
-            else:
-                score -= 0.3  # 庄家在主胜上亏损，可能诱盘
-        elif max_bet == away_bet_pct:
-            # 客胜最热
-            if away_profit_val > home_profit_val:
-                score -= 0.4  # 庄家在客胜上盈利更多，利好客
-            else:
-                score += 0.3  # 庄家在客胜上亏损，可能诱盘
-        else:
-            # 平局最热
-            if draw_profit_val > max(home_profit_val, away_profit_val):
-                score += 0.2  # 平局利好
-    
-    # 投注占比均匀（差值<5%）→ 难判断
-    if bet_diff < 5:
-        score = 0
-    
-    return {
-        'score': max(-1, min(1, score)),
-        'data': labels,
-        'bet_diff': bet_diff,
-        'bet_pcts': {'home': home_bet_pct, 'draw': draw_bet_pct, 'away': away_bet_pct},
-        'profits': {'home': home_profit_val, 'draw': draw_profit_val, 'away': away_profit_val}
-    }
-
-# ============ Signal 9: 欧赔盘路组合匹配（新增）============
-    """
-    分析≥2个欧赔盘路是否一致
-    - step1: 欧赔趋势（初→终变化方向）
-    - step2: 竞彩同赔
-    - step3: IW同赔
-    
-    当≥2个盘路指向同一方向时，给予额外加权
-    """
-    e1 = analyze_europe_odds(s1_text)
-    e2 = analyze_same_odds(s2_text, '竞彩')
-    e3 = analyze_same_odds(s3_text, 'IW')
-    
-    # 判断各盘路方向
-    directions = []
-    if e1['score'] > 0.2:
-        directions.append('home')
-    elif e1['score'] < -0.2:
-        directions.append('away')
-    
-    if e2['score'] > 0.2:
-        directions.append('home')
-    elif e2['score'] < -0.2:
-        directions.append('away')
-    
-    if e3['score'] > 0.2:
-        directions.append('home')
-    elif e3['score'] < -0.2:
-        directions.append('away')
-    
-    # 统计一致性
-    home_count = directions.count('home')
-    away_count = directions.count('away')
-    
-    combo_score = 0
-    combo_level = '无一致'
-    
-    if home_count >= 2:
-        combo_score = 0.3 + (home_count - 2) * 0.1
-        combo_level = f'{home_count}盘利好主'
-    elif away_count >= 2:
-        combo_score = -0.3 - (away_count - 2) * 0.1
-        combo_level = f'{away_count}盘利好客'
-    
-    return {
-        'score': combo_score,
-        'level': combo_level,
-        'home_count': home_count,
-        'away_count': away_count,
-        'data': {'e1': e1, 'e2': e2, 'e3': e3}
-    }
-
-rq_same = analyze_same_odds(s5, '让球同赔') if s5 else {'score': 0, 'total': 0, 'win_rate': 0, 'matched_dims': 0}
-# ============ Run all signals ============
+# ============ 执行所有信号分析 ============
 europe = analyze_europe_odds(s1)
-jc_same = analyze_same_odds(s2, '竞彩同赔')
-iw_same = analyze_same_odds(s3, 'IW同赔')
+jc_same = analyze_same_odds(s2, "竞彩同赔")
+iw_same = analyze_same_odds(s3, "IW同赔")
 macau = analyze_macau_asian(s6, s7, s8)
 
-# 让球同赔（step4+5）
-rq_same = analyze_same_odds(s5, '让球同赔') if s5 else {'score': 0, 'total': 0, 'win_rate': 0, 'matched_dims': 0}
+rq_same = analyze_same_odds(s5, "让球同赔") if s5 else {
+    "score": 0, "total": 0, "win_rate": 0, "matched_dims": 0}
 
 home = analyze_home_team(s9_13)
 away = analyze_away_team(s14_18)
@@ -754,73 +322,7 @@ baijia = analyze_baijia(s19_23)
 panlu = analyze_panlu_match(s24)
 zhuangjia = analyze_zhuangjia(s25)
 
-# ============ Calculate data quality score ============
-# 数据质量分：样本越多、维度越全，分数越高
-total_samples = (
-    europe['total'] + jc_same['total'] + iw_same['total'] +
-    macau['total'] + home['total'] + away['total'] + baijia['total'] +
-    rq_same['total']
-)
-active_dims = sum(1 for x in [europe, jc_same, iw_same, macau, rq_same, home, away, baijia, panlu, zhuangjia] if x.get('total', 0) > 0 or x.get('matched_dims', 0) > 0)
-
-data_quality = min(1.0, (total_samples / 60) * 0.5 + (active_dims / 10) * 0.5)
-
-# ============ Weighted total with dynamic adjustment ============
-# 基础权重（10个维度，总权重=1.00）
-# 基础权重（10个维度，总权重=1.00）
-# 竞彩同赔12% + IW同赔8% + 盘路匹配9% + 庄家盈亏7%
-base_weights = [
-    ('欧赔趋势', europe['score'], 0.10),
-    ('竞彩同赔', jc_same['score'], 0.12),
-    ('IW同赔', iw_same['score'], 0.08),
-    ('澳门亚盘', macau['score'], 0.10),
-    ('让球同赔', rq_same['score'], 0.10),
-    ('主队主场', home['score'], 0.12),
-    ('客队客场', away['score'], 0.12),
-    ('百家对比', baijia['score'], 0.10),
-    ('盘路匹配', panlu['score'], 0.09),
-    ('庄家盈亏', zhuangjia['score'], 0.07),
-]
-
-# ===== V3 权重精细化调整 (Wilson Score + Bayesian Average) =====
-# 替代旧的简单线性调整，解决三个问题：
-# 1. 不看样本量 → Wilson Score 置信区间
-# 2. 只增不减 → 低准确率组合惩罚
-# 3. 线性boost粗糙 → 非线性映射 + 分层修正
-
-def _wilson(correct, total, z=1.96):
-    """Wilson Score 置信下界"""
-    if total == 0:
-        return 0.0
-    p = correct / total
-    z2 = z * z
-    center = p + z2 / (2 * total)
-    margin = z * math.sqrt((p * (1 - p) + z2 / (4 * total)) / total)
-    return (center - margin) / (1 + z2 / total)
-
-def _bayesian(correct, total, C=10, m=0.50):
-    """Bayesian Average 平滑评分"""
-    if total == 0:
-        return m
-    return (C * m + total * correct / total) / (C + total)
-
-def _trust_to_factor(trust):
-    """综合可信分 → 权重修正系数 (平滑非线性)
-    
-    修复：缩小boost/penalty范围，避免极端权重变化
-    旧版: trust≥0.60→×1.0~1.5, trust<0.20→×0.3~0.8 (太激进)
-    新版: trust≥0.60→×1.0~1.25, trust<0.20→×0.6~0.9 (温和)
-    """
-    if trust >= 0.60:
-        return 1.0 + min(0.25, (trust - 0.60) / 0.40 * 0.25)
-    elif trust >= 0.40:
-        return 1.0
-    elif trust >= 0.20:
-        return 0.85 + (trust - 0.20) / 0.20 * 0.15
-    elif trust > 0.0:
-        return 0.6 + (trust / 0.20) * 0.25
-    return 0.0
-
+# ============ Signal 1: 欧赔趋势（step1）============
 def _parse_combo_dims_v3(tag):
     """从组合标签解析维度"""
     kw = {'竞彩': '竞彩同赔', 'IW': 'IW同赔', '盘路': '盘路匹配',
@@ -842,8 +344,8 @@ try:
             _meta = json.loads(f.read())
         current_league = _meta.get('league', '')
 except:
-    pass
 
+    log.warn(f"[final_concl] 解析异常")
 # 构建比赛上下文
 match_ctx = {
     'league': current_league,
@@ -856,6 +358,30 @@ match_ctx = {
     'betting_ratio': '',
     'confidence_level': '',
 }
+
+# ============ 数据质量分 ============
+total_samples = (
+    europe['total'] + jc_same['total'] + iw_same['total'] +
+    macau['total'] + home['total'] + away['total'] + baijia['total'] +
+    rq_same['total']
+)
+active_dims = sum(1 for x in [europe, jc_same, iw_same, macau, rq_same, home, away, baijia, panlu, zhuangjia]
+                   if x.get('total', 0) > 0 or x.get('matched_dims', 0) > 0)
+data_quality = min(1.0, (total_samples / 60) * 0.5 + (active_dims / 10) * 0.5)
+
+# ============ 基础权重（10个维度，总权重=1.00）============
+base_weights = [
+    ('欧赔趋势', europe['score'], 0.10),
+    ('竞彩同赔', jc_same['score'], 0.12),
+    ('IW同赔', iw_same['score'], 0.08),
+    ('澳门亚盘', macau['score'], 0.10),
+    ('让球同赔', rq_same['score'], 0.10),
+    ('主队主场', home['score'], 0.12),
+    ('客队客场', away['score'], 0.12),
+    ('百家对比', baijia['score'], 0.10),
+    ('盘路匹配', panlu['score'], 0.09),
+    ('庄家盈亏', zhuangjia['score'], 0.07),
+]
 
 # 从 base_weights 的 score 中提取方向信号
 for name, score, weight in base_weights:
@@ -886,8 +412,9 @@ if os.path.exists(learned_v2_file):
     try:
         with open(learned_v2_file, 'r', encoding='utf-8') as f:
             learned_v2 = json.loads(f.read())
-    except: pass
+    except:
 
+        log.warn(f"[final_concl] 解析异常")
 # ===== 1. 组合模式匹配 (Wilson Score) =====
 all_combos = learned_v2.get('high_accuracy_combos', []) + learned_v2.get('low_accuracy_combos', [])
 
@@ -987,8 +514,9 @@ try:
                 home_odds = float(m.group(1))
                 draw_odds = float(m.group(2))
                 away_odds = float(m.group(3))
-        except: pass
-    
+        except:
+
+            log.warn(f"[final_concl] 解析异常")
     # 提取亚盘变化
     asian_line_val = match_ctx.get('macau_line', '')
     asian_change_val = ''
@@ -1043,8 +571,8 @@ if tw > 0:
 base_weights = new_weights
 
 # 输出调整日志
-for log in adjust_log:
-    print(log)
+for adj in adjust_log:
+    log.info(adj)
 
 # 根据数据质量调整信心度
 quality_factor = 0.5 + data_quality * 0.5  # 0.5~1.0
@@ -1121,9 +649,9 @@ learn_total = league_modifier + panlu_modifier + tag_modifier
 if learn_total != 0:
     confidence_pct = max(10, min(95, confidence_pct + learn_total))
     learn_adjustment_log.insert(0, f'学习修正总计: {learn_total:+d}')
-    print(f'[LEARN] 信心度修正: {learn_total:+d} ({confidence_pct - learn_total}→{confidence_pct})')
-    for log in learn_adjustment_log:
-        print(f'[LEARN]   {log}')
+    log.info(f'[LEARN] 信心度修正: {learn_total:+d} ({confidence_pct - learn_total}→{confidence_pct})')
+    for adj2 in learn_adjustment_log:
+        log.info(f'[LEARN]   {adj2}')
 
 # 信心等级
 if confidence_pct >= 70 and abs_score >= 0.4:
@@ -1194,8 +722,8 @@ if os.path.exists(meta_path):
             else:
                 rq_handicap = '平手 '
         except:
-            pass
 
+            log.warn(f"[final_concl] 解析异常")
 # ============ 让球预测独立分析（多维度比分信号） ============
 # 从同联赛、亚盘、百家、主客队历史等维度提取比分信号
 rq_score_home = 0  # 主胜信号
@@ -1287,8 +815,8 @@ if rq:
     try:
         rq_handicap_num = int(float(rq))
     except:
-        pass
 
+        log.warn(f"[final_concl] 解析异常")
 if rq_handicap_num == 0:
     # 平手盘，让球预测 = 竞彩预测
     rq_direction_final = rq_pred_direction
@@ -1507,4 +1035,4 @@ output.append('---')
 output.append('')
 output.append('*提示：以上分析基于数据驱动规则引擎 + 历史模式学习，每个结论均可追溯到具体数据。投资有风险，请结合实战判断。*')
 
-print('\n'.join(output))
+log.info('\n'.join(output))

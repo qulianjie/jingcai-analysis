@@ -95,7 +95,8 @@ def match_level(bench_cp, bench_w, hist_cp, hist_w):
         wh = float(hist_w)
         if abs(wb - wh) <= 0.05: score += 1
         elif abs(wb - wh) <= 0.1: score += 0.5
-    except: pass
+    except Exception as e:
+        log.warn(f'[亚盘] 盘口匹配计算异常: {e}')
     if score >= 1.5: return '高'
     elif score >= 0.8: return '中'
     return '低'
@@ -123,8 +124,8 @@ def fetch_same_odds_ajax(fid, cp, s1, s2):
     # 先获取cookie
     try:
         sess.get('https://trade.500.com/', timeout=15)
-    except:
-        pass
+    except Exception as e:
+        log.warn(f'[亚盘] 获取cookie超时: {e}')
     
     # 访问same页面获取vsdate
     cp_encoded = quote(cp.encode('gbk'))

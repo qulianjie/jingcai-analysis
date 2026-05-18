@@ -8,6 +8,12 @@
     python run_pipeline.py all                # 分析今日所有场次(包括已开赛)
 """
 import os, sys, json, re, time, subprocess, shutil
+from _log_util import setup_logger
+LOG_DIR = None
+if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]):
+    LOG_DIR = os.path.join(os.path.dirname(os.path.normpath(sys.argv[1])), 'logs')
+log = setup_logger('pipeline', LOG_DIR)
+
 from datetime import datetime
 
 import io
@@ -22,7 +28,7 @@ TASKS_DIR = os.path.join(SCRIPT_DIR, 'tasks')
 def log(tag, msg):
     t = datetime.now().strftime('%H:%M:%S')
     msg = str(msg).encode('utf-8', errors='replace').decode('utf-8', errors='replace')
-    print('[{}] [{}] {}'.format(t, tag, msg))
+    log.info('[{}] [{}] {}'.format(t, tag, msg))
     sys.stdout.flush()
 
 def run_script(script_name, args, timeout=3600):
@@ -194,7 +200,7 @@ def run_match_pipeline(match, date_str, match_num):
         ('step8_1923_extractor.py', [match_dir]),
         ('step918_extractor.py', [match_dir]),
         ('step24_extractor.py', [match_dir]),
-        # step25/step26 是批次脚本，在 REGEN 阶段统一运行，不在这里
+        # step25/step26 是批次脚本（step25 已合并 step26），在 REGEN 阶段统一运行，不在这里
     ]
     
     # 杯赛step8需要迭代收集大量球队，加大超时
@@ -267,8 +273,7 @@ def verify_match_data(match_dir, home='', away=''):
         ('group04_teamA/step9_home_history.txt', '主队历史'),
         ('group05_teamB/step14_away_history.txt', '客队历史'),
         ('group06_baijia/step19_baijia_compare.txt', '百家对比'),
-        ('step25_zhuangjia.json', '庄家盈亏'),
-        ('step26_profit_ratio.json', '盈亏占比'),
+        ('step25_zhuangjia.json', '庄家盈亏(含盈亏占比)'),
     ]
     
     # 各步骤空模板阈值（实际测量值+100B余量）
@@ -495,8 +500,8 @@ def main():
         log('STEP25', '庄家盈亏分析(25) - 全量处理')
         run_script('step25_zhuangjia.py', [date_str], timeout=3600)
         
-        log('STEP26', '盈亏占比分析(26) - 全量处理')
-        run_script('step26_profit_ratio.py', [date_str], timeout=3600)
+        log('STEP26', '盈亏占比分析(25→26) - 全量处理(已合并)')
+        run_script('step25_zhuangjia.py', [date_str, '--all'], timeout=3600)
         
         # Re-generate all reports with step 25+26 data
         log('REGEN', '重新生成报告（含第25+26步）')
