@@ -37,6 +37,8 @@ archive/
 _*.py
 _*.js
 _*.bat
+_*.txt
+_*.json
 check_*.py
 check_*.js
 test_*.py
@@ -66,10 +68,16 @@ refill*.py
 refill*.js
 rerun_*.py
 rerun_*.js
+batch_*.py
+batch_*.js
+sync_remaining.py
+temp_check.py
+match_history.py
 run_pipeline.sh
 run_pipeline_win.py
 run_notion_sync.bat
 run.py
 run_match_history_5d.py
-match_history.py
 touzhu_*.html
+nul
+scripts/
