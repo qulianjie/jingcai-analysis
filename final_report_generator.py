@@ -235,33 +235,20 @@ if not macau_line:
 # ============ Generate Report ============
 
 from datetime import datetime
-import subprocess
 now = datetime.now().strftime('%Y-%m-%d %H:%M')
 
-# Run conclusion generator
+# Run conclusion generator (direct import, no subprocess)
 conclusion_md = '- 数据不足，无法生成结论'
-script_dir = os.path.dirname(os.path.abspath(__file__))
-conclusion_script = os.path.join(script_dir, 'final_conclusion_generator.py')
-log.info(f'[CONCLUSION] checking: {conclusion_script}')
-if os.path.exists(conclusion_script):
-    try:
-        result = subprocess.run(
-            [sys.executable, conclusion_script, MD],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
-            env={**os.environ, 'PYTHONIOENCODING': 'utf-8'},
-        )
-        stdout_text = result.stdout.decode('utf-8', errors='replace').strip()
-        stderr_text = result.stderr.decode('utf-8', errors='replace').strip()
-        log.info(f'[CONCLUSION] return={result.returncode}, stdout_len={len(stdout_text)}, stderr={stderr_text[:200]}')
-        if result.returncode == 0 and stdout_text:
-            conclusion_md = stdout_text
-            log.info(f'[CONCLUSION] OK, length={len(conclusion_md)}')
-        else:
-            log.info(f'[CONCLUSION] FAIL or empty: {stderr_text[:200]}')
-    except Exception as e:
-        log.info(f'[CONCLUSION] exception: {e}')
-else:
-    log.info(f'[CONCLUSION] script not found')
+try:
+    from final_conclusion_generator import generate_conclusion
+    text = generate_conclusion(MD)
+    if text:
+        conclusion_md = text
+        log.info(f'[CONCLUSION] OK, length={len(conclusion_md)}')
+    else:
+        log.info(f'[CONCLUSION] empty result')
+except Exception as e:
+    log.info(f'[CONCLUSION] exception: {e}')
 
 # Step 7 fallback
 if not s7.strip():
@@ -473,4 +460,4 @@ with open(OUTPUT_PATH, 'w', encoding='utf-8') as f:
     f.write(r)
 
 log.info(f'OK: {OUTPUT_PATH}')
-log.info(f'Size: {os.path.getsize(OUTPUT_PATH)} bytes')
+log.info(f'Size: {os.path.getsize(OUTPUT_PATH)} bytes')
