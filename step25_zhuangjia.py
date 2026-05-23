@@ -76,7 +76,7 @@ def parse_zhuangjia_data(fid):
                 'sp_odds': m[3],
                 'volume': m[4],
                 'profit_raw': profit_raw,
-                'profit': int(profit_raw.replace(',', '').replace('-', '')) if profit_raw else 0,
+                'profit': int(profit_raw.replace(',', '')) if profit_raw else 0,
                 'profit_dir': not profit_raw.startswith('-'),  # True=庄家赚钱(正数), False=庄家亏钱(负数)
             }
         return result
@@ -440,3 +440,5 @@ if __name__ == '__main__':
     if not run_full:
         log.info(f'[HINT] 如需完整盈亏占比分析，请加 --all 参数')
     log.info('[DONE]')
+/bin/bash: line 4: C:/Users/lianjie/.hermes/cache/terminal/hermes-snap-ab708772c9d3.sh: No such file or directory
+/bin/bash: line 5: C:/Users/lianjie/.hermes/cache/terminal/hermes-cwd-ab708772c9d3.txt: No such file or directory
