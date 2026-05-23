@@ -483,7 +483,7 @@ def main():
                 matches = [m for m in matches if m.get('matchnum', '').startswith(today_weekday)]
                 log('CRON_FILTER', '只保留{}开头的比赛: {} -> {}'.format(today_weekday, before, len(matches)))
         
-        if filter_match:
+        if filter_match and filter_match != 'all':
             matches = [m for m in matches if filter_match in m.get('matchnum', '')]
             log('FILTER', '过滤后剩余{}场'.format(len(matches)))
         

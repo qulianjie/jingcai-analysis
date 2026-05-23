@@ -440,5 +440,3 @@ if __name__ == '__main__':
     if not run_full:
         log.info(f'[HINT] 如需完整盈亏占比分析，请加 --all 参数')
     log.info('[DONE]')
-/bin/bash: line 4: C:/Users/lianjie/.hermes/cache/terminal/hermes-snap-ab708772c9d3.sh: No such file or directory
-/bin/bash: line 5: C:/Users/lianjie/.hermes/cache/terminal/hermes-cwd-ab708772c9d3.txt: No such file or directory
