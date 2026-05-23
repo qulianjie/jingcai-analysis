@@ -30,7 +30,12 @@ log = setup_logger('step25', LOG_DIR)
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-TASKS_DIR = os.path.join(BASE_DIR, 'tasks')
+# 优先使用versions/base/tasks/（与run_pipeline.py一致）
+BASE_TASKS = os.path.join(BASE_DIR, 'versions', 'base', 'tasks')
+if os.path.exists(BASE_TASKS):
+    TASKS_DIR = BASE_TASKS
+else:
+    TASKS_DIR = os.path.join(BASE_DIR, 'tasks')
 
 # 阈值
 VOLUME_THRESHOLDS = [10000, 100000]     # 成交量：少<1万<中<10万<多
@@ -225,13 +230,31 @@ def run_analysis(date_str, run_full=False):
         log.info('[ERROR] 未找到 matches_data.json')
         return
     
-    log.info(f'  找到 {len(fid_map)} 场比赛的 fid')
+    # 扁平化：支持两种格式
+    # 格式A: {'周三001': 1363570, ...}  (旧格式，match_num->fid)
+    # 格式B: {date, fetch_time, groups: {group: {matches: [...]}}} (step0分组格式)
+    flat_fids = {}
+    for k, v in fid_map.items():
+        if k in ('date', 'fetch_time'):
+            continue
+        if isinstance(v, dict) and 'matches' in v:
+            for m in v['matches']:
+                flat_fids[m['matchnum']] = m['fid']
+        elif isinstance(v, dict):
+            for gk, gv in v.items():
+                if isinstance(gv, dict) and 'matches' in gv:
+                    for m in gv['matches']:
+                        flat_fids[m['matchnum']] = m['fid']
+        else:
+            flat_fids[k] = v
+    
+    log.info(f'  找到 {len(flat_fids)} 场比赛的 fid')
     
     count25 = 0
     count26 = 0
     
-    for match_num in sorted(fid_map.keys()):
-        fid = fid_map[match_num]
+    for match_num in sorted(flat_fids.keys()):
+        fid = flat_fids[match_num]
         log.info(f'  处理 {match_num} (fid={fid})...')
         
         # 找到 match 目录
@@ -301,10 +324,100 @@ def run_analysis(date_str, run_full=False):
         log.info(f'[OK] 第26步同步完成: {count26} 场比赛')
 
 
+def run_single_match(match_dir, run_full=True):
+    """为单场比赛运行 step25 + step26
+    
+    从 match_dir/meta.json 读取 FID，单独处理一场。
+    支持在 run_pipeline 的 per-match 步骤中直接调用。
+    """
+    meta_path = os.path.join(match_dir, 'meta.json')
+    if not os.path.exists(meta_path):
+        log.info(f'[ERROR] meta.json 不存在: {meta_path}')
+        return False
+    
+    try:
+        with open(meta_path, 'r', encoding='utf-8') as f:
+            meta = json.loads(f.read())
+    except Exception as e:
+        log.info(f'[ERROR] 读取 meta.json 失败: {e}')
+        return False
+    
+    fid = meta.get('fid', '')
+    match_num = meta.get('matchnum', '')
+    if not fid:
+        log.info(f'[ERROR] meta.json 中无 fid')
+        return False
+    
+    log.info(f'  [单场] {match_num} (fid={fid})...')
+    
+    # step25: 庄家盈亏
+    raw_data = parse_zhuangjia_data(fid)
+    if not raw_data:
+        log.info(f'    [WARN] 无投注/庄家数据')
+        return False
+    
+    labels = {}
+    for label, info in raw_data.items():
+        labels[label] = {
+            'bet_pct': classify_value(info.get('bet_pct', 0), BET_PCT_THRESHOLDS),
+            'volume': classify_value(info.get('volume', 0), VOLUME_THRESHOLDS),
+            'profit': classify_value(info.get('profit', 0), PROFIT_THRESHOLDS),
+            'raw': info,
+        }
+    
+    result25 = {
+        'match_num': match_num,
+        'fid': fid,
+        'url': TOUZHU_URL.format(fid=fid),
+        'data': raw_data,
+        'labels': {k: {kk: vv for kk, vv in v.items() if kk != 'raw'} for k, v in labels.items()},
+    }
+    
+    step25_file = os.path.join(match_dir, 'step25_zhuangjia.json')
+    safe_json_dump(result25, step25_file, indent=2)
+    log.info(f'    第25步已保存: {step25_file}')
+    
+    for label, info in labels.items():
+        raw = info['raw']
+        log.info(f'    {label}: 赔率={raw.get("odds","?")} 投注占比={info["bet_pct"]}({raw.get("bet_pct","")}%) 成交量={info["volume"]} 庄家盈亏={info["profit"]}')
+    
+    # step26: 盈亏占比
+    if run_full:
+        profit_analysis = analyze_profit_ratio(raw_data)
+        result26 = {
+            'match_num': match_num,
+            'fid': fid,
+            'profit_data': raw_data,
+            'profit_ratio': profit_analysis['profit_ratio'],
+            'analysis': profit_analysis['analysis'],
+        }
+        step26_file = os.path.join(match_dir, 'step26_profit_ratio.json')
+        safe_json_dump(result26, step26_file, indent=2)
+        log.info(f'    第26步已保存: {step26_file}')
+        
+        a = profit_analysis['analysis']
+        log.info(f'    庄家盈亏: {a["庄家胜盈亏"]} / {a["庄家平盈亏"]} / {a["庄家负盈亏"]}')
+        log.info(f'    庄家最看好: {a["庄家最看好"]}')
+    
+    return True
+
+
 if __name__ == '__main__':
     args = sys.argv[1:]
     date = ''
     run_full = False
+    
+    # 支持 --match-dir <path> 模式（run_pipeline per-match 调用）
+    for i, a in enumerate(args):
+        if a == '--match-dir' and i + 1 < len(args):
+            match_dir_arg = args[i + 1]
+            if os.path.isdir(match_dir_arg):
+                run_single_match(match_dir_arg, run_full=True)
+                log.info('[DONE]')
+                sys.exit(0)
+            else:
+                log.info(f'[ERROR] 无效的 match_dir: {match_dir_arg}')
+                sys.exit(1)
     
     for a in args:
         if a == '--all' or a == '--full':

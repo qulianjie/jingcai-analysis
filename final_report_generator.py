@@ -139,23 +139,32 @@ for s25_name in ['step25_zhuangjia.json', 'step25_zhuangjia.md']:
 if not s25:
     s25 = rd(os.path.join(PARENT, 'step25_zhuangjia.json'))
 
-# Step 26 (from merged step25 data)
+# Step 26 (from merged step25 data - written as step26_profit_ratio.json by step25_zhuangjia.py --all)
 s26 = ''
-if s25 and s25.strip().startswith('{'):
-    try:
-        s25_data_full = json.loads(s25)
-        # Check if step26-style analysis was included (--full mode)
-        if 'data' in s25_data_full:
-            # Reconstruct analysis from step25 raw data
-            from step25_zhuangjia import analyze_profit_ratio as _analyze_pr
-            profit_analysis = _analyze_pr(s25_data_full['data'])
-            analysis = profit_analysis['analysis']
-            profit_ratio_data = profit_analysis['profit_ratio']
-            analysis['盈亏占比'] = {k: v.get('ratio', 0) for k, v in profit_ratio_data.items()}
-            analysis['投注占比'] = {k: v.get('bet_pct', '0') for k, v in profit_ratio_data.items()}
-            s26 = json.dumps({'analysis': analysis, 'profit_ratio': profit_ratio_data})
-    except:
-        pass
+for s26_name in ['step26_profit_ratio.json', 'step26_profit_ratio.md']:
+    s26 = rd(os.path.join(MD, s26_name))
+    if s26:
+        break
+if not s26:
+    # Fallback: reconstruct from step25 raw data
+    s26 = rd(os.path.join(MD, 'step25_zhuangjia.json'))
+    if not s26:
+        s26 = rd(os.path.join(PARENT, 'step25_zhuangjia.json'))
+    if s26 and s26.strip().startswith('{'):
+        try:
+            s25_data_full = json.loads(s26)
+            if 'data' in s25_data_full:
+                from step25_zhuangjia import analyze_profit_ratio as _analyze_pr
+                pa = _analyze_pr(s25_data_full['data'])
+                analysis = pa['analysis']
+                prd = pa['profit_ratio']
+                analysis['盈亏占比'] = {k: v.get('ratio', 0) for k, v in prd.items()}
+                analysis['投注占比'] = {k: v.get('bet_pct', '0') for k, v in prd.items()}
+                s26 = json.dumps({'analysis': analysis, 'profit_ratio': prd})
+            else:
+                s26 = ''
+        except:
+            s26 = ''
 
 # ============ Extract match info ============
 
@@ -238,7 +247,7 @@ if os.path.exists(conclusion_script):
     try:
         result = subprocess.run(
             [sys.executable, conclusion_script, MD],
-            capture_output=True, timeout=30,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
             env={**os.environ, 'PYTHONIOENCODING': 'utf-8'},
         )
         stdout_text = result.stdout.decode('utf-8', errors='replace').strip()
@@ -464,4 +473,4 @@ with open(OUTPUT_PATH, 'w', encoding='utf-8') as f:
     f.write(r)
 
 log.info(f'OK: {OUTPUT_PATH}')
-log.info(f'Size: {os.path.getsize(OUTPUT_PATH)} bytes')
+log.info(f'Size: {os.path.getsize(OUTPUT_PATH)} bytes')

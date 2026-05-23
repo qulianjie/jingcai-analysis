@@ -2,6 +2,7 @@
 """Step 8 + Step 19-23 合并提取器 - 同联赛亚盘/欧赔对比
 用法1: python step8_1923_extractor.py <home_id> <away_id> <league> <fid> <macau_line> [output_path]
 用法2: python step8_1923_extractor.py <match_dir>  (自动从 meta.json 读取参数)
+用法3: python step8_1923_extractor.py <match_dir> --cache <cache_dir>  (使用预缓存数据)
 """
 import sys, os, json
 import io
@@ -13,6 +14,15 @@ LOG_DIR = None
 if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]):
     LOG_DIR = os.path.join(os.path.dirname(os.path.normpath(sys.argv[1])), 'logs')
 log = setup_logger('step8', LOG_DIR)
+
+# 解析 --cache 参数
+LEAGUE_CACHE_DIR = None
+if '--cache' in sys.argv:
+    ci = sys.argv.index('--cache')
+    if ci + 1 < len(sys.argv):
+        LEAGUE_CACHE_DIR = sys.argv[ci + 1]
+        # 从 sys.argv 中移除 --cache 参数，不影响原逻辑
+        del sys.argv[ci:ci+2]
 
 # 支持两种调用方式
 if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]):
@@ -115,6 +125,50 @@ def match_odds_prefix(bench, hist):
 # ============ 获取历史比赛（整个联赛） ============
 log.info('获取整个联赛比赛...')
 
+# ============ 尝试从联赛缓存加载 ============
+_loaded_from_cache = False
+_cached_league_matches = None
+if LEAGUE_CACHE_DIR:
+    cache_path = os.path.join(LEAGUE_CACHE_DIR, '{}.json'.format(LEAGUE))
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path, 'r', encoding='utf-8') as f:
+                cache_data = json.load(f)
+            if cache_data.get('all_matches'):
+                log.info('  使用联赛缓存: {} ({}场)'.format(cache_path, len(cache_data['all_matches'])))
+                _loaded_from_cache = True
+                _cached_league_matches = cache_data['all_matches']
+        except Exception as e:
+            log.info('  缓存加载失败: {}，回退到在线爬取'.format(e))
+
+if _loaded_from_cache:
+    # 从缓存构建 league_matches（同联赛筛选+去重+排除当前比赛）
+    league_matches = []
+    seen_fid = set()
+    for m in _cached_league_matches:
+        fid_check = str(m.get('FIXTUREID', ''))
+        if fid_check in seen_fid:
+            continue
+        seen_fid.add(fid_check)
+        if fid_check == str(FID):
+            continue
+        league_matches.append({
+            'date': m.get('MATCHDATE', ''),
+            'home': m.get('HOMETEAMSXNAME', ''),
+            'away': m.get('AWAYTEAMSXNAME', ''),
+            'score': '{}:{}'.format(m.get('HOMESCORE', ''), m.get('AWAYSCORE', '')),
+            'half': '{}:{}'.format(m.get('FIRSTHOMESCORE', ''), m.get('FIRSTAWAYSCORE', '')),
+            'result': m.get('lpl_on', ''),
+            'pan': m.get('PAN', ''),
+            'bs': m.get('BS', ''),
+            'handicap': m.get('HANDICAPLINENAME', ''),
+            'fid': fid_check,
+            'round': m.get('ROUND', ''),
+            'home_id': str(m.get('HOMETEAMID', '')),
+            'away_id': str(m.get('AWAYTEAMID', '')),
+        })
+    log.info('  同联赛(缓存): {} 场 (去重后)'.format(len(league_matches)))
+
 # ============ 联赛ID映射（联赛名称 -> liansai.500.com 联赛ID）
 # 自动从 leagues_all.json 加载完整958个联赛映射
 # 竞彩简称 → 源站全称 的映射由 league_mapper.py 处理
@@ -153,164 +207,183 @@ def _from_cache(fid, dt):
     return r
 
 
-# 获取联赛球队列表
-team_ids = set()
-league_id = LEAGUE_ID_MAP.get(LEAGUE, '')
+if not _loaded_from_cache:
+    # 获取联赛球队列表
+    team_ids = set()
+    league_id = LEAGUE_ID_MAP.get(LEAGUE, '')
 
-# 杯赛特殊处理：杯赛没有 staticdata 联赛ID文件，需要从球队赛程中收集
-CUP_NAMES = ['欧罗巴', '欧联', '欧协联', '解放者杯', '南美解放者杯', '欧冠', '欧洲冠军联赛', '德国杯', '西班牙国王杯', '意大利杯', '法国杯', '英格兰足总杯', '英格兰联赛杯', '葡超杯', '巴甲杯', '巴西杯', '阿根廷杯', '哥伦杯', '厄瓜杯', '日本天皇杯', '亚冠', '亚足联冠军', '非洲冠军杯']
-is_cup = LEAGUE in CUP_NAMES
+    # 杯赛特殊处理：杯赛没有 staticdata 联赛ID文件，需要从球队赛程中收集
+    CUP_NAMES = ['欧罗巴', '欧联', '欧协联', '解放者杯', '南美解放者杯', '欧冠', '欧洲冠军联赛', '德国杯', '西班牙国王杯', '意大利杯', '法国杯', '英格兰足总杯', '英格兰联赛杯', '葡超杯', '巴甲杯', '巴西杯', '阿根廷杯', '哥伦杯', '厄瓜杯', '日本天皇杯', '亚冠', '亚足联冠军', '非洲冠军杯']
+    is_cup = LEAGUE in CUP_NAMES
 
-if is_cup:
-    log.info('  [杯赛模式] 联赛: {}'.format(LEAGUE))
-    log.info('  从主队/客队赛程中收集杯赛球队...')
-    # 迭代收集杯赛球队（2轮）
-    # 第1轮：从主队/客队的杯赛历史中收集直接对手
-    # 第2轮：从这些球队的杯赛历史中收集更多对手
-    team_ids = {HOME_ID, AWAY_ID}
-    all_cup_matches = {}
-    seen_fid = set()
-    for iteration in range(2):
-        round_teams = sorted(team_ids)
-        log.info('  第{}轮: 遍历{}支球队...'.format(iteration+1, len(round_teams)))
-        prev_count = len(team_ids)
-        for i, tid in enumerate(round_teams, 1):
-            url = 'https://liansai.500.com/team/{}/teamfixture/?SIMPLEGBNAME={}'.format(tid, LEAGUE)
+    if is_cup:
+        log.info('  [杯赛模式] 联赛: {}'.format(LEAGUE))
+        log.info('  从主队/客队赛程中收集杯赛球队...')
+        # 迭代收集杯赛球队（2轮）
+        # 第1轮：从主队/客队的杯赛历史中收集直接对手
+        # 第2轮：从这些球队的杯赛历史中收集更多对手
+        team_ids = {HOME_ID, AWAY_ID}
+        all_cup_matches = {}
+        seen_fid = set()
+        for iteration in range(2):
+            round_teams = sorted(team_ids)
+            log.info('  第{}轮: 遍历{}支球队...'.format(iteration+1, len(round_teams)))
+            prev_count = len(team_ids)
+            for i, tid in enumerate(round_teams, 1):
+                url = 'https://liansai.500.com/team/{}/teamfixture/?SIMPLEGBNAME={}'.format(tid, LEAGUE)
+                try:
+                    resp = sess.get(url, timeout=15)
+                    resp.encoding = 'gbk'
+                    soup = BeautifulSoup(resp.text, 'html.parser')
+                    for tr in soup.find_all('tr', attrs={'data': True}):
+                        try:
+                            data = json.loads(tr.get('data', '{}'))
+                            fid = data.get('FIXTUREID', '')
+                            if fid and fid not in seen_fid:
+                                seen_fid.add(fid)
+                                all_cup_matches[fid] = data
+                                team_ids.add(str(data.get('HOMETEAMID', '')))
+                                team_ids.add(str(data.get('AWAYTEAMID', '')))
+                        except:
+                            continue
+                except:
+                    log.warn(f"[step8] 解析异常")
+                time.sleep(0.1)
+                if i % 10 == 0:
+                    log.info('    已处理 {}/{} 支...'.format(i, len(round_teams)))
+            new_count = len(team_ids) - prev_count
+            log.info('  第{}轮新增: {}支球队, {}场比赛'.format(iteration+1, new_count, len(all_cup_matches)))
+            if new_count == 0:
+                break
+        team_ids.discard('')
+        log.info('  收集完成: {}支球队, {}场比赛'.format(len(team_ids), len(all_cup_matches)))
+        # 转换为列表
+        all_matches = list(all_cup_matches.values())
+        log.info('  总记录: {} 条'.format(len(all_matches)))
+        # 杯赛去重+筛选
+        league_matches = []
+        seen_fid = set()
+        for d in all_matches:
+            fid_check = str(d.get('FIXTUREID',''))
+            if fid_check in seen_fid: continue
+            seen_fid.add(fid_check)
+            if fid_check == str(FID): continue
+            league_matches.append({
+                'date': d.get('MATCHDATE',''), 'home': d.get('HOMETEAMSXNAME',''),
+                'away': d.get('AWAYTEAMSXNAME',''),
+                'score': '{}:{}'.format(d.get('HOMESCORE',''), d.get('AWAYSCORE','')),
+                'half': '{}:{}'.format(d.get('FIRSTHOMESCORE',''), d.get('FIRSTAWAYSCORE','')),
+                'result': d.get('lpl_on',''), 'pan': d.get('PAN',''), 'bs': d.get('BS',''),
+                'handicap': d.get('HANDICAPLINENAME',''), 'fid': fid_check,
+                'round': d.get('ROUND',''),
+                'home_id': str(d.get('HOMETEAMID','')), 'away_id': str(d.get('AWAYTEAMID','')),
+            })
+        log.info('  同联赛(杯赛): {} 场 (去重后)'.format(len(league_matches)))
+    else:
+        # 非杯赛：走联赛ID逻辑
+        # 获取联赛球队列表
+        team_ids = set()
+        league_id = LEAGUE_ID_MAP.get(LEAGUE, '')
+        if not league_id:
+            log.info('  ⚠️ 联赛 "{}" 未在映射表中，尝试从球队赛程推断...'.format(LEAGUE))
+            # 回退：从主队赛程中获取联赛球队
+            try:
+                url = 'https://liansai.500.com/team/{}/teamfixture/'.format(HOME_ID)
+                resp = sess.get(url, timeout=15)
+                resp.encoding = 'gbk'
+                soup = BeautifulSoup(resp.text, 'html.parser')
+                for a in soup.find_all('a', href=True):
+                    href = a.get('href', '')
+                    m = re.search(r'/zuqiu-(\d+)/', href)
+                    if m:
+                        league_id = m.group(1)
+                        LEAGUE_ID_MAP[LEAGUE] = league_id
+                        log.info('  从球队赛程推断联赛ID: {} = {}'.format(LEAGUE, league_id))
+                        break
+            except Exception as e:
+                log.info('  推断失败: {}'.format(e))
+
+        if league_id:
+            league_url = 'https://liansai.500.com/zuqiu-{}/'.format(league_id)
+            log.info('  联赛ID: {} -> {}'.format(LEAGUE, league_id))
+            try:
+                resp = sess.get(league_url, timeout=15)
+                resp.encoding = 'gbk'
+                soup = BeautifulSoup(resp.text, 'html.parser')
+                for a in soup.find_all('a', href=True):
+                    href = a.get('href', '')
+                    m = re.search(r'/team/(\d+)', href)
+                    if m and '/teamfixture/' not in href:
+                        team_ids.add(m.group(1))
+            except Exception as e:
+                log.info('  获取联赛球队失败: {}'.format(e))
+
+        # 如果联赛页面返回0球队（19xxx ID没有静态页面），回退到球队赛程收集
+        if len(team_ids) == 0 and league_id:
+            log.info('  ⚠️ 联赛页面返回0球队，回退到球队赛程收集')
+            team_ids = {HOME_ID, AWAY_ID}
+            league_id = ''
+
+        if not league_id and len(team_ids) == 0:
+            log.info('  ⚠️ 无法获取联赛ID，回退到主队+客队')
+            team_ids = {HOME_ID, AWAY_ID}
+
+        log.info('  联赛球队: {} 支'.format(len(team_ids)))
+
+        # 获取所有球队赛程
+        all_matches = []
+        for i, team_id in enumerate(sorted(team_ids), 1):
+            url = 'https://liansai.500.com/team/{}/teamfixture/'.format(team_id)
             try:
                 resp = sess.get(url, timeout=15)
                 resp.encoding = 'gbk'
                 soup = BeautifulSoup(resp.text, 'html.parser')
                 for tr in soup.find_all('tr', attrs={'data': True}):
-                    try:
-                        data = json.loads(tr.get('data', '{}'))
-                        fid = data.get('FIXTUREID', '')
-                        if fid and fid not in seen_fid:
-                            seen_fid.add(fid)
-                            all_cup_matches[fid] = data
-                            team_ids.add(str(data.get('HOMETEAMID', '')))
-                            team_ids.add(str(data.get('AWAYTEAMID', '')))
-                    except:
-                        continue
+                    try: data = json.loads(tr.get('data', '{}'))
+                    except: continue
+                    all_matches.append(data)
             except:
-
                 log.warn(f"[step8] 解析异常")
-            time.sleep(0.1)
-            if i % 10 == 0:
-                log.info('    已处理 {}/{} 支...'.format(i, len(round_teams)))
-        new_count = len(team_ids) - prev_count
-        log.info('  第{}轮新增: {}支球队, {}场比赛'.format(iteration+1, new_count, len(all_cup_matches)))
-        if new_count == 0:
-            break
-    team_ids.discard('')
-    log.info('  收集完成: {}支球队, {}场比赛'.format(len(team_ids), len(all_cup_matches)))
-    # 转换为列表
-    all_matches = list(all_cup_matches.values())
-    log.info('  总记录: {} 条'.format(len(all_matches)))
+            time.sleep(0.2)
+            if i % 4 == 0:
+                log.info('  已获取 {}/{} 支球队...'.format(i, len(team_ids)))
+        log.info('  总记录: {} 条'.format(len(all_matches)))
+
+        # 筛选相同联赛（去重）
+        league_matches = []
+        seen_fid = set()
+        for d in all_matches:
+            if not _league_match(d.get('SIMPLEGBNAME',''), LEAGUE): continue
+            fid_check = str(d.get('FIXTUREID',''))
+            if fid_check in seen_fid: continue
+            seen_fid.add(fid_check)
+            # 排除当前比赛
+            if fid_check == str(FID): continue
+            league_matches.append({
+                'date': d.get('MATCHDATE',''),
+                'home': d.get('HOMETEAMSXNAME',''),
+                'away': d.get('AWAYTEAMSXNAME',''),
+                'score': '{}:{}'.format(d.get('HOMESCORE',''), d.get('AWAYSCORE','')),
+                'half': '{}:{}'.format(d.get('FIRSTHOMESCORE',''), d.get('FIRSTAWAYSCORE','')),
+                'result': d.get('lpl_on',''),
+                'pan': d.get('PAN',''),
+                'bs': d.get('BS',''),
+                'handicap': d.get('HANDICAPLINENAME',''),
+                'fid': fid_check,
+                'round': d.get('ROUND',''),
+                'home_id': str(d.get('HOMETEAMID','')),
+                'away_id': str(d.get('AWAYTEAMID','')),
+            })
+        log.info('  同联赛: {} 场 (去重后)'.format(len(league_matches)))
 else:
-    # 非杯赛：走联赛ID逻辑
-    # 获取联赛球队列表
-    team_ids = set()
-    league_id = LEAGUE_ID_MAP.get(LEAGUE, '')
-    if not league_id:
-        log.info('  ⚠️ 联赛 "{}" 未在映射表中，尝试从球队赛程推断...'.format(LEAGUE))
-        # 回退：从主队赛程中获取联赛球队
-        try:
-            url = 'https://liansai.500.com/team/{}/teamfixture/'.format(HOME_ID)
-            resp = sess.get(url, timeout=15)
-            resp.encoding = 'gbk'
-            soup = BeautifulSoup(resp.text, 'html.parser')
-            for a in soup.find_all('a', href=True):
-                href = a.get('href', '')
-                m = re.search(r'/zuqiu-(\d+)/', href)
-                if m:
-                    league_id = m.group(1)
-                    LEAGUE_ID_MAP[LEAGUE] = league_id
-                    log.info('  从球队赛程推断联赛ID: {} = {}'.format(LEAGUE, league_id))
-                    break
-        except Exception as e:
-            log.info('  推断失败: {}'.format(e))
-
-    if league_id:
-        league_url = 'https://liansai.500.com/zuqiu-{}/'.format(league_id)
-        log.info('  联赛ID: {} -> {}'.format(LEAGUE, league_id))
-        try:
-            resp = sess.get(league_url, timeout=15)
-            resp.encoding = 'gbk'
-            soup = BeautifulSoup(resp.text, 'html.parser')
-            for a in soup.find_all('a', href=True):
-                href = a.get('href', '')
-                m = re.search(r'/team/(\d+)', href)
-                if m and '/teamfixture/' not in href:
-                    team_ids.add(m.group(1))
-        except Exception as e:
-            log.info('  获取联赛球队失败: {}'.format(e))
-
-    # 如果联赛页面返回0球队（19xxx ID没有静态页面），回退到球队赛程收集
-    if len(team_ids) == 0 and league_id:
-        log.info('  ⚠️ 联赛页面返回0球队，回退到球队赛程收集')
-        team_ids = {HOME_ID, AWAY_ID}
-        league_id = ''
-
-    if not league_id and len(team_ids) == 0:
-        log.info('  ⚠️ 无法获取联赛ID，回退到主队+客队')
-        team_ids = {HOME_ID, AWAY_ID}
-
-    log.info('  联赛球队: {} 支'.format(len(team_ids)))
-
-    # 获取所有球队赛程
-    all_matches = []
-    for i, team_id in enumerate(sorted(team_ids), 1):
-        url = 'https://liansai.500.com/team/{}/teamfixture/'.format(team_id)
-        try:
-            resp = sess.get(url, timeout=15)
-            resp.encoding = 'gbk'
-            soup = BeautifulSoup(resp.text, 'html.parser')
-            for tr in soup.find_all('tr', attrs={'data': True}):
-                try: data = json.loads(tr.get('data', '{}'))
-                except: continue
-                all_matches.append(data)
-        except:
-
-            log.warn(f"[step8] 解析异常")
-        time.sleep(0.2)
-        if i % 4 == 0:
-            log.info('  已获取 {}/{} 支球队...'.format(i, len(team_ids)))
-    log.info('  总记录: {} 条'.format(len(all_matches)))
-
-# 筛选相同联赛（去重）
-league_matches = []
-seen_fid = set()
-for d in all_matches:
-    if not _league_match(d.get('SIMPLEGBNAME',''), LEAGUE): continue
-    fid_check = str(d.get('FIXTUREID',''))
-    if fid_check in seen_fid: continue
-    seen_fid.add(fid_check)
-    # 排除当前比赛
-    if fid_check == str(FID): continue
-    league_matches.append({
-        'date': d.get('MATCHDATE',''),
-        'home': d.get('HOMETEAMSXNAME',''),
-        'away': d.get('AWAYTEAMSXNAME',''),
-        'score': '{}:{}'.format(d.get('HOMESCORE',''), d.get('AWAYSCORE','')),
-        'half': '{}:{}'.format(d.get('FIRSTHOMESCORE',''), d.get('FIRSTAWAYSCORE','')),
-        'result': d.get('lpl_on',''),
-        'pan': d.get('PAN',''),
-        'bs': d.get('BS',''),
-        'handicap': d.get('HANDICAPLINENAME',''),
-        'fid': fid_check,
-        'round': d.get('ROUND',''),
-        'home_id': str(d.get('HOMETEAMID','')),
-        'away_id': str(d.get('AWAYTEAMID','')),
-    })
-log.info('  同联赛: {} 场 (去重后)'.format(len(league_matches)))
+    log.info('  跳过在线爬取，使用缓存数据: {}场'.format(len(league_matches)))
 
 # ============ Step 8: 筛选相同盘口 ============
-log.info()
 log.info('='*60)
 log.info('第八步：相同联赛相同亚盘统计')
 log.info('='*60)
 log.info('澳门即时盘: {}'.format(MACAU_LINE))
-log.info()
+print()
 
 handicap_matches = []
 seen_fid = set()
@@ -329,9 +402,9 @@ for m in league_matches:
 log.info('  盘口匹配: {} 场'.format(len(handicap_matches)))
 
 # ============ 逐场获取Step 8数据 ============
-log.info()
+print()
 log.info('逐场获取亚盘+欧赔数据...')
-log.info()
+print()
 
 step8_data = []
 for i, m in enumerate(handicap_matches[:15], 1):
@@ -419,7 +492,7 @@ for i, m in enumerate(handicap_matches[:15], 1):
     time.sleep(0.3)
 
 # ============ 获取百家欧赔数据（Step 19-23） ============
-log.info()
+print()
 log.info('获取百家欧赔数据 ({} 场)...'.format(len(league_matches)))
 step19_data = []
 for i, m in enumerate(league_matches, 1):
@@ -461,7 +534,7 @@ for i, m in enumerate(league_matches, 1):
     time.sleep(0.3)
 
 # 当前比赛基准
-log.info()
+print()
 log.info('获取当前比赛基准...')
 cur_ouzhi = None
 cur_jc = cur_iw = cur_av = None
@@ -664,7 +737,7 @@ out.append(stats_summary(iw_stats_8))
 bench_av_live = None
 if cur_av:
     bench_av_live = [cur_av['lw'], cur_av['ld'], cur_av['ll']]
-    log.info()
+    print()
     log.info('百家基准即时盘: {}/{}'.format(bench_av_live[0], bench_av_live[1]), bench_av_live[2])
 
 # ---------- Step 19: 百家欧赔对比 ----------
@@ -895,7 +968,7 @@ out.append('')
 out.append('### 盘路匹配度统计')
 out.append(stats_summary(rq_stats_23))
 
-log.info()
+print()
 log.info('='*60)
 log.info('完成！')
 log.info('  Step 8: {} 场'.format(len(step8_data)))

@@ -92,6 +92,24 @@ lines1.append('')
 lines1.append('提取完成！')
 lines1.append('  竞彩/Interwetten/百家平均 (3家)')
 
+# ============ 保存 ouzhi 原始数据（供 step8 复用） ============
+if jc_data or iw_data or av_data:
+    ouzhi_raw = {
+        'jc': {k: v for k, v in jc_data.items() if k in ('iw','id','il','lw','ld','ll')} if jc_data else None,
+        'iw': {k: v for k, v in iw_data.items() if k in ('iw','id','il','lw','ld','ll')} if iw_data else None,
+        'av': {k: v for k, v in av_data.items() if k in ('iw','id','il','lw','ld','ll')} if av_data else None,
+        'all_companies': [
+            {k: v for k, v in c.items() if k in ('row_num','name','iw','id','il','lw','ld','ll')}
+            for c in all_companies
+        ],
+    }
+    ouzhi_json_path = os.path.join(os.path.dirname(OUT1), 'step1_ouzhi_raw.json')
+    try:
+        with open(ouzhi_json_path, 'w', encoding='utf-8') as f:
+            json.dump(ouzhi_raw, f, ensure_ascii=False)
+    except Exception as e:
+        print('  ⚠️ ouzhi原始数据保存失败: {}'.format(e))
+
 # ============ STEP 4: 让球基础 ============
 html_rq = sess.get('https://odds.500.com/fenxi/rangqiu-{}.shtml'.format(FID), timeout=15)
 html_rq.encoding = 'gbk'

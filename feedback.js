@@ -1,4 +1,5 @@
 const https = require('https');
+const iconv = require('iconv-lite');
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
@@ -20,16 +21,97 @@ function fetchFinalOdds(dateStr) {
     const taskDir = path.join(__dirname, 'tasks', dateStr);
     const dataDir = path.join(taskDir, 'data');
     
-    if (!fs.existsSync(dataDir)) {
-        console.log('[终盘] data目录不存在');
+    // 先尝试从match目录读取（新流水线）
+    let matchDirs = [];
+    if (fs.existsSync(dataDir)) {
+        matchDirs = fs.readdirSync(dataDir).filter(d => {
+            const dp = path.join(dataDir, d);
+            return fs.existsSync(dp) && fs.statSync(dp).isDirectory() && d.startsWith('match');
+        });
+    }
+    console.log(`[终盘] 找到 ${matchDirs.length} 个比赛目录`);
+    
+    // 如果没有match目录，从matches_data.json读取FID（兼容旧流水线）
+    if (matchDirs.length === 0) {
+        const mdPath = path.join(taskDir, 'matches_data.json');
+        if (fs.existsSync(mdPath)) {
+            try {
+                const md = JSON.parse(fs.readFileSync(mdPath, 'utf8'));
+                const groups = md.groups || {};
+                const tempDir = path.join(dataDir || path.join(taskDir, 'data'), '_tmp_odds');
+                if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+                
+                for (const [gn, gd] of Object.entries(groups)) {
+                    const ml = gd.matches || [];
+                    for (const m of ml) {
+                        const mn = m.matchnum || '';
+                        const fid = m.fid || '';
+                        const league = m.league || '';
+                        const home = m.home || '';
+                        const away = m.away || '';
+                        if (!fid) continue;
+                        
+                        const mDir = path.join(tempDir, mn);
+                        if (!fs.existsSync(mDir)) fs.mkdirSync(mDir, { recursive: true });
+                        // 写meta.json让step146可以用match_dir模式
+                        const meta = { matchnum: mn, fid, league, home, away, rq: m.rq || '' };
+                        fs.writeFileSync(path.join(mDir, 'meta.json'), JSON.stringify(meta, null, 2), 'utf8');
+                        
+                        console.log(`[终盘] ${mn}(FID:${fid}) 获取终盘赔率...`);
+                        try {
+                            const r = execSync(`python step146_extractor.py "${mDir}"`, { cwd: __dirname, timeout: 60000, stdio: 'pipe' });
+                            // 读取step1取live odds
+                            const s1Path = path.join(mDir, 'group01_europe', 'step1_europe_base.txt');
+                            const s4Path = path.join(mDir, 'group02_handicap', 'step4_handicap_base.txt');
+                            if (fs.existsSync(s1Path)) {
+                                const c1 = fs.readFileSync(s1Path, 'utf8');
+                                const lines1 = c1.split('\n');
+                                for (const line of lines1) {
+                                    if (!line.includes('|')) continue;
+                                    const parts = line.split('|').map(p => p.trim()).filter(p => p);
+                                    if (parts.length < 8) continue;
+                                    if (parts[0] === '竞彩官方' && parts[1] !== '-1') {
+                                        odds[mn] = {
+                                            jc_win: parseFloat(parts[4]), jc_draw: parseFloat(parts[5]), jc_loss: parseFloat(parts[6]),
+                                        };
+                                    }
+                                    if (parts[0] === '百家平均') {
+                                        if (!odds[mn]) odds[mn] = {};
+                                        odds[mn].bj_win = parseFloat(parts[4]); odds[mn].bj_draw = parseFloat(parts[5]); odds[mn].bj_loss = parseFloat(parts[6]);
+                                    }
+                                    if (parts[0] === 'Interwetten') {
+                                        if (!odds[mn]) odds[mn] = {};
+                                        odds[mn].iw_win = parseFloat(parts[4]); odds[mn].iw_draw = parseFloat(parts[5]); odds[mn].iw_loss = parseFloat(parts[6]);
+                                    }
+                                }
+                            }
+                            if (fs.existsSync(s4Path)) {
+                                const c4 = fs.readFileSync(s4Path, 'utf8');
+                                for (const line of c4.split('\n')) {
+                                    if (!line.includes('竞彩官方')) continue;
+                                    const parts = line.split('|').map(p => p.trim()).filter(p => p);
+                                    if (parts.length >= 8) {
+                                        if (!odds[mn]) odds[mn] = {};
+                                        odds[mn].rq_win = parseFloat(parts[5]); odds[mn].rq_draw = parseFloat(parts[6]); odds[mn].rq_loss = parseFloat(parts[7]);
+                                    }
+                                    break;
+                                }
+                            }
+                        } catch(e) {
+                            console.log(`[终盘] ${mn} 获取失败: ${e.message.substring(0,60)}`);
+                        }
+                    }
+                }
+                // 清理临时目录
+                try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch(e) {}
+            } catch(e) {
+                console.log('[终盘] matches_data.json 解析失败:', e.message.substring(0,60));
+            }
+        } else {
+            console.log('[终盘] 没有matches_data.json，无法获取终盘赔率');
+        }
         return odds;
     }
-    
-    const matchDirs = fs.readdirSync(dataDir).filter(d => {
-        const dp = path.join(dataDir, d);
-        return fs.existsSync(dp) && fs.statSync(dp).isDirectory() && d.startsWith('match');
-    });
-    console.log(`[终盘] 找到 ${matchDirs.length} 个比赛目录`);
     
     for (const dir of matchDirs) {
         try {
@@ -75,23 +157,26 @@ function fetchFinalOdds(dateStr) {
                     const parts = line.split('|').map(p => p.trim()).filter(p => p);
                     if (parts.length < 8) continue;
                     
-                    // 竞彩官方: | 竞彩官方 | 初胜 | 初平 | 初负 | 即胜 | 即平 | 即负 | 变化 |
+                    const keepArrow = (a) => { if (!a || a.length < 3) return ''; return a.slice(0,3); };                    // 竞彩官方: | 竞彩官方 | 初胜 | 初平 | 初负 | 即胜 | 即平 | 即负 | 变化 |
                     if (parts[0] === '竞彩官方' && parts[1] !== '-1') {
                         o.jc_win = Math.floor(parseFloat(parts[4]) * 10) / 10;
                         o.jc_draw = Math.floor(parseFloat(parts[5]) * 10) / 10;
                         o.jc_loss = Math.floor(parseFloat(parts[6]) * 10) / 10;
+                        o.jc_panlu = keepArrow(parts[7]);
                     }
                     // Interwetten
                     if (parts[0] === 'Interwetten') {
                         o.iw_win = Math.floor(parseFloat(parts[4]) * 10) / 10;
                         o.iw_draw = Math.floor(parseFloat(parts[5]) * 10) / 10;
                         o.iw_loss = Math.floor(parseFloat(parts[6]) * 10) / 10;
+                        o.iw_panlu = keepArrow(parts[7]);
                     }
                     // 百家平均
                     if (parts[0] === '百家平均') {
                         o.bj_win = Math.floor(parseFloat(parts[4]) * 10) / 10;
                         o.bj_draw = Math.floor(parseFloat(parts[5]) * 10) / 10;
                         o.bj_loss = Math.floor(parseFloat(parts[6]) * 10) / 10;
+                        o.bj_panlu = keepArrow(parts[7]);
                     }
                 }
             }
@@ -113,23 +198,53 @@ function fetchFinalOdds(dateStr) {
                 }
             }
             
-            // 3. step6_asian_base.txt - 澳门亚盘
+            // 让球指数盘路（从step4数值计算初盘vs即时）
+            if (odds[matchNum] && odds[matchNum].rq_win) {
+                try {
+                    const c4b = fs.readFileSync(step4Path, 'utf8');
+                    const lines4b = c4b.split('\n');
+                    for (const l4 of lines4b) {
+                        if (!l4.includes('|')) continue;
+                        const p4 = l4.split('|').map(x => x.trim()).filter(x => x);
+                        if (p4.length < 8) continue;
+                        if (p4[0] === '竞彩官方') {
+                            const cmp = (a, b) => parseFloat(a) > parseFloat(b) ? '⬆' : parseFloat(a) < parseFloat(b) ? '⬇' : '➡';
+                            odds[matchNum].rq_panlu = cmp(p4[2], p4[5]) + cmp(p4[3], p4[6]) + cmp(p4[4], p4[7]);
+                        }
+                    }
+                } catch(e) {}
+            }
+            // 3. 澳门亚盘 - 从step6文件提取即时盘盘口文字
             if (fs.existsSync(step6Path)) {
                 const c6 = fs.readFileSync(step6Path, 'utf8');
                 const lines6 = c6.split('\n');
                 for (const line of lines6) {
                     if (!line.includes('澳门')) continue;
-                    // | 澳门 | 初盘(盘口 水位|水位) | 即时盘(盘口 水位|水位) |
-                    const parts = line.split('|').map(p => p.trim()).filter(p => p);
-                    if (parts.length >= 3) {
-                        // 提取即时盘口的盘口部分（去掉水位）
-                        const liveText = parts[parts.length - 1] || '';
-                        // 去掉水位部分（数字|数字）和方向标记
-                        const clean = liveText.replace(/\d+\.\d+\|\d+\.\d+/, '').replace(/[⬆⬇➡⬆⬇]/g, '').trim();
-                        o.macau = clean;
+                    // step6新格式: | 澳门 | 两球半（主水0.860|客水0.980） | 两球半（主水0.960|客水0.880） |
+                    // 策略：去掉所有（主水...|客水...）再按|分割取第3段
+                    const noBracket = line.replace(/[（(].*?[）)]/g, '');
+                    const parts = noBracket.split('|').map(p => p.trim()).filter(p => p);
+                    // 新格式: 去掉括号后 = | 澳门 | 两球半  | 两球半  |
+                    // parts[0]=澳门, parts[1]=两球半, parts[2]=两球半
+                    if (parts.length >= 3 && /[一-龥]/.test(parts[2])) {
+                        o.macau = parts[2].replace(/[⬆⬇➡▽△↑↓→←↔]/g, '').trim();
+                    } else if (parts.length >= 3) {
+                        // 旧格式兼容: parts = [澳门, 05, 1.020, 0.940, 0.840]
+                        // parts倒数第二个带箭头（如 0.940⬆➡），去掉数字和箭头
+                        const raw = parts[parts.length - 2] || '';
+                        o.macau = raw.replace(/[\d\.⬆⬇➡▽△↑↓→←↔]/g, '').trim();
                     }
                     break;
                 }
+            }
+            // 如果step6没取到，从meta.json macau_line fallback
+            if (!o.macau && fs.existsSync(metaPath)) {
+                try {
+                    const metaUpdated = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+                    if (metaUpdated.macau_line) {
+                        o.macau = metaUpdated.macau_line.replace(/[⬆⬇➡▽△↑↓→←↔]/g, '').trim();
+                    }
+                } catch(e) {}
             }
             
             if (Object.keys(o).length > 0) {
@@ -143,63 +258,62 @@ function fetchFinalOdds(dateStr) {
 }
 
 // ===== 获取比赛结果 =====
-// 数据源：zgzcw.com（竞彩官网HTML，可获取全部比赛）
+// 数据源：500.com 竞彩页面（已完成的比赛在 td-team 中内嵌比分 如 "拉赫蒂1:1瓦萨"）
+// ===== 获取比赛结果 =====
+// 数据源：500.com 竞彩页面（已完成的比赛在 td-team 文本中内嵌比分）
 async function fetchMatchResults(dateStr) {
     const results = {};
     
     return new Promise((resolve) => {
-        const url = `https://cp.zgzcw.com/lottery/jcplayvsForJsp.action?lotteryId=23&issue=${dateStr}`;
-        const req = https.request(url, {
+        const url = `https://trade.500.com/jczq/?playid=269&g=2&date=${dateStr}`;
+        https.get(url, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'text/html,application/xhtml+xml',
             },
             timeout: 15000
         }, res => {
-            let d = '';
-            res.on('data', c => d += c);
+            const chunks = [];
+            res.on('data', c => chunks.push(c));
             res.on('end', () => {
                 try {
-                    // 找到所有比赛行 <tr mN="周日XXX">
-                    const trPattern = /<tr[^>]*mN="([^"]*)"[^>]*>/g;
-                    const matchRows = [];
-                    let tm;
-                    while ((tm = trPattern.exec(d)) !== null) {
-                        matchRows.push({
-                            index: tm.index,
-                            name: tm[1]
-                        });
-                    }
+                    const raw = Buffer.concat(chunks);
+                    const html = iconv.decode(raw, 'GBK');
                     
-                    // 对每个比赛行，提取比分
-                    for (let i = 0; i < matchRows.length; i++) {
-                        const row = matchRows[i];
-                        const endPos = i < matchRows.length - 1 ? matchRows[i + 1].index : d.length;
-                        const block = d.substring(row.index, endPos);
+                    // 500.com交易页面，每场比赛一行 <tr data-matchnum="周四001" ...>
+                    const trPattern = /<tr[^>]*class="[^"]*bet-tb-tr[^"]*"[^>]*>([\s\S]*?)<\/tr>/g;
+                    let trMatch;
+                    while ((trMatch = trPattern.exec(html)) !== null) {
+                        const fullMatch = trMatch[0];
+                        const mnMatch = fullMatch.match(/data-matchnum="([^"]+)"/);
+                        if (!mnMatch) continue;
+                        const matchNum = mnMatch[1].trim();
                         
-                        // 提取比分：优先 <td class="wh-5 bf">，备用 <span class="red">1:0</span>
-                        let bfMatch = block.match(/<td class="wh-5 bf">\s*(\d+):(\d+)\s*<\/td>/);
-                        if (!bfMatch) {
-                            bfMatch = block.match(/<span class="red"[^>]*>\s*(\d+):(\d+)\s*<\/span>/);
-                        }
-                        if (bfMatch) {
-                            const hs = parseInt(bfMatch[1]);
-                            const as = parseInt(bfMatch[2]);
-                            if (hs <= 15 && as <= 15) {
-                                results[row.name] = { homeScore: hs, awayScore: as };
+                        // 队伍文本在 td-team 中（可能嵌套<a>标签）
+                        const teamTD = trMatch[1].match(/<td[^>]*class="[^"]*td-team[^"]*"[^>]*>([\s\S]*?)<\/td>/);
+                        if (!teamTD) continue;
+                        const teamText = teamTD[1].replace(/<[^>]*>/g, '').trim();
+                        
+                        // 未完成比赛含 VS，完成比赛比分替换了 VS
+                        if (teamText.indexOf('VS') === -1) {
+                            const scoreMatch = teamText.match(/(\d+):(\d+)/);
+                            if (scoreMatch) {
+                                const hs = parseInt(scoreMatch[1]);
+                                const as = parseInt(scoreMatch[2]);
+                                if (hs <= 20 && as <= 20) {
+                                    results[matchNum] = { homeScore: hs, awayScore: as };
+                                }
                             }
                         }
                     }
                     
-                    console.log(`[zgzcw] 获取到 ${Object.keys(results).length} 场比分`);
+                    console.log(`[500] 获取到 ${Object.keys(results).length} 场比分（日期 ${dateStr}）`);
                 } catch (e) {
-                    console.log('[zgzcw] Parse error:', e.message);
+                    console.log('[500] Parse error:', e.message);
                 }
                 resolve(results);
             });
-        });
-        req.on('error', () => resolve(results));
-        req.on('timeout', () => { req.destroy(); resolve(results); });
-        req.end();
+        }).on('error', () => resolve(results));
     });
 }
 
@@ -244,6 +358,33 @@ function queryNotionMatches(dateStr) {
     });
 }
 
+function notionPatch(pageId, props) {
+    return new Promise((resolve, reject) => {
+        const data = JSON.stringify({ properties: props });
+        const req = https.request({
+            hostname: 'api.notion.com',
+            path: `/v1/pages/${pageId}`,
+            method: 'PATCH',
+            headers: {
+                'Authorization': 'Bearer ' + API_KEY,
+                'Notion-Version': '2022-06-28',
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(data)
+            }
+        }, res => {
+            let d = '';
+            res.on('data', c => d += c);
+            res.on('end', () => {
+                if (res.statusCode >= 400) reject(new Error(`HTTP ${res.statusCode}: ${d.slice(0,100)}`));
+                else resolve();
+            });
+        });
+        req.on('error', reject);
+        req.write(data);
+        req.end();
+    });
+}
+
 // ===== 更新 Notion 页面 =====
 function updateMatch(pageId, score, result, isCorrect, pred, handicap, rqPred, europeanOdds) {
     // 计算让球后结果
@@ -273,9 +414,14 @@ function updateMatch(pageId, score, result, isCorrect, pred, handicap, rqPred, e
     else handicapText = '平手';
     
     // 构建反馈总结
-    let summary = `竞彩: ${pred} → ${result} (${score})`;
+    const predCorrectMark = isCorrect ? '✅正确' : '❌错误';
+    const rqCorrectMark = rqIsCorrect === true ? '✅正确' : (rqIsCorrect === false ? '❌错误' : '');
+    // 安全过滤：替换&#xFFFD;乱码字符防止反馈总结带乱码
+    const safe = s => s.replace(/\uFFFD/g, '');
+    let summary = `竞彩预测: ${safe(pred)} → ${result} (${score}) ${predCorrectMark}`;
     if (rqPred) {
-        summary += `\n让球${handicapText}: ${rqPred} → ${rqActualResult} (${adjHome}:${awayScore})`;
+        const rqMark = rqCorrectMark ? ` ${rqCorrectMark}` : '';
+        summary += `\n让球预测: ${safe(rqPred)} → ${handicapText} ${rqActualResult} (${adjHome}:${awayScore})${rqMark}`;
     }
     
     const props = {
@@ -306,8 +452,18 @@ function updateMatch(pageId, score, result, isCorrect, pred, handicap, rqPred, e
         if (europeanOdds.rq_loss) props['终盘让球指数负'] = { number: europeanOdds.rq_loss };
         // 澳门亚盘
         if (europeanOdds.macau) props['终盘竞彩澳门亚盘'] = { rich_text: [{ text: { content: europeanOdds.macau } }] };
+        // 盘路字段
+        if (europeanOdds.jc_panlu) props['欧赔竞彩盘路'] = { rich_text: [{ text: { content: europeanOdds.jc_panlu } }] };
+        if (europeanOdds.bj_panlu) props['欧赔百家盘路'] = { rich_text: [{ text: { content: europeanOdds.bj_panlu } }] };
+        if (europeanOdds.iw_panlu) props['欧赔interwetten盘路'] = { rich_text: [{ text: { content: europeanOdds.iw_panlu } }] };
+        if (europeanOdds.rq_panlu) props['让球指数盘路'] = { rich_text: [{ text: { content: europeanOdds.rq_panlu } }] };
+        if (europeanOdds.macau_panlu) props['澳门亚盘盘路'] = { rich_text: [{ text: { content: europeanOdds.macau_panlu } }] };
     }
     
+    if (rqPred) {
+        props['让球预测'] = { rich_text: [{ text: { content: rqPred } }] };
+    }
+
     if (rqIsCorrect !== null) {
         props['让球预测正确'] = { checkbox: rqIsCorrect };
     }
@@ -801,8 +957,13 @@ async function main() {
         }
     }
     
-    // 默认昨天
-    if (!targetDate) {
+    // 当传了 --date 时，处理前一天（已经开赛的比赛）
+    if (targetDate) {
+        const prevDay = new Date(targetDate);
+        prevDay.setDate(prevDay.getDate() - 1);
+        targetDate = prevDay.toISOString().split('T')[0];
+    } else {
+        // 默认昨天
         const yesterday = new Date(Date.now() - 86400000);
         targetDate = yesterday.toISOString().split('T')[0];
     }
@@ -886,10 +1047,12 @@ async function main() {
                 let rqPred = '';
                 m = content.match(/让球预测[:\s]*([^\n|]+)/);
                 if (m) rqPred = m[1].trim();
-                // 提取让球数(从让球指数明细)
+                // 提取让球数(从让球预测文本解析，方向与rqPred一致)
                 let handicap = 0;
-                const rqTable = content.match(/\|\s*竞彩官方\s*\|\s*([+-]?\d+(?:\.5)?)\s*\|/);
-                if (rqTable) handicap = parseFloat(rqTable[1]);  // 让球数，正数=主队让球
+                const isShouRang = rqPred.match(/受让(\d+(?:\.5)?)球/);
+                const isRang = rqPred.match(/(?:^|[^受])让(\d+(?:\.5)?)球/);
+                if (isShouRang) handicap = -parseFloat(isShouRang[1]);
+                else if (isRang) handicap = parseFloat(isRang[1]);
                 predictions[matchNum] = { prediction: pred, rqPred: rqPred, handicap: handicap };
             } catch (e) {}
         }
@@ -916,127 +1079,45 @@ async function main() {
         // Prediction from Notion (竞彩预测 field)
         const notionPred = props['竞彩预测']?.rich_text?.[0]?.plain_text || '';
         
-        // 检查是否已有完整反馈(比分+总结都有)
-        const existingScore = props['实际比分']?.rich_text?.[0]?.plain_text;
-        const existingSummary = props['反馈总结']?.rich_text?.[0]?.plain_text;
-        const hasExistingFeedback = existingScore && existingSummary;
-        
         // 检查是否已有终盘赔率数据
-        const existingFinalOdds = props['终盘竞彩欧赔胜']?.number;
         const matchOdds = finalOdds[matchNum] || null;
         
-        // 如果已有完整反馈且有终盘赔率，检查比分是否需要更新
-        if (hasExistingFeedback && existingFinalOdds) {
-            // 检查比分是否需要更新（源站数据可能更准确）
-            const result = matchResults[matchNum];
-            if (result) {
-                const correctScore = `${result.homeScore}:${result.awayScore}`;
-                if (existingScore && existingScore !== correctScore) {
-                    // 比分不一致，更新
-                    let actualResult = '';
-                    if (result.homeScore > result.awayScore) actualResult = '胜';
-                    else if (result.homeScore < result.awayScore) actualResult = '负';
-                    else actualResult = '平';
-                    try {
-                        const data = JSON.stringify({ properties: {
-                            '实际比分': { rich_text: [{ text: { content: correctScore } }] },
-                            '实际结果': { rich_text: [{ text: { content: actualResult } }] }
-                        }});
-                        await new Promise((resolve, reject) => {
-                            const req = https.request({
-                                hostname: 'api.notion.com',
-                                path: `/v1/pages/${page.id}`,
-                                method: 'PATCH',
-                                headers: {
-                                    'Authorization': 'Bearer ' + API_KEY,
-                                    'Notion-Version': '2022-06-28',
-                                    'Content-Type': 'application/json'
-                                }
-                            }, res => { let d = ''; res.on('data', c => d += c); res.on('end', () => { if (res.statusCode >= 400) reject(new Error(`HTTP ${res.statusCode}`)); else resolve(); }); });
-                            req.on('error', reject);
-                            req.write(data);
-                            req.end();
-                        });
-                        console.log(`📝 ${matchNum} ${home} vs ${away} - 修正比分: ${existingScore} → ${correctScore}`);
-                        updated++;
-                    } catch (e) {
-                        console.log(`❌ ${matchNum} 比分更新失败: ${e.message}`);
-                    }
-                }
-            }
-            skipped++;
-            continue;
-        }
-        
-        // 新页面（无完整反馈）或缺少终盘赔率：补充终盘赔率 + 比分
-        if (!hasExistingFeedback || !existingFinalOdds) {
+        // 无论是否已有反馈，都重新生成总结（修复：老反馈总结可能数据错误）
+        // 先补充终盘赔率
+        if (matchOdds) {
             try {
-                const updateProps = {};
-                if (matchOdds) {
-                    if (matchOdds.jc_win) updateProps['终盘竞彩欧赔胜'] = { number: matchOdds.jc_win };
-                    if (matchOdds.jc_draw) updateProps['终盘竞彩欧赔平'] = { number: matchOdds.jc_draw };
-                    if (matchOdds.jc_loss) updateProps['终盘竞彩欧赔负'] = { number: matchOdds.jc_loss };
-                    if (matchOdds.bj_win) updateProps['终盘百家欧赔胜'] = { number: matchOdds.bj_win };
-                    if (matchOdds.bj_draw) updateProps['终盘百家欧赔平'] = { number: matchOdds.bj_draw };
-                    if (matchOdds.bj_loss) updateProps['终盘百家欧赔负'] = { number: matchOdds.bj_loss };
-                    if (matchOdds.iw_win) updateProps['终盘Interwetten胜'] = { number: matchOdds.iw_win };
-                    if (matchOdds.iw_draw) updateProps['终盘Interwetten平'] = { number: matchOdds.iw_draw };
-                    if (matchOdds.iw_loss) updateProps['终盘Interwetten负'] = { number: matchOdds.iw_loss };
-                    if (matchOdds.rq_win) updateProps['终盘让球指数胜'] = { number: matchOdds.rq_win };
-                    if (matchOdds.rq_draw) updateProps['终盘让球指数平'] = { number: matchOdds.rq_draw };
-                    if (matchOdds.rq_loss) updateProps['终盘让球指数负'] = { number: matchOdds.rq_loss };
-                    if (matchOdds.macau) updateProps['终盘竞彩澳门亚盘'] = { rich_text: [{ text: { content: matchOdds.macau } }] };
-                }
-                // 补充比分（如果源站有数据）
-                const result = matchResults[matchNum];
-                if (result) {
-                    const score = `${result.homeScore}:${result.awayScore}`;
-                    let actualResult = '';
-                    if (result.homeScore > result.awayScore) actualResult = '胜';
-                    else if (result.homeScore < result.awayScore) actualResult = '负';
-                    else actualResult = '平';
-                    updateProps['实际比分'] = { rich_text: [{ text: { content: score } }] };
-                    updateProps['实际结果'] = { rich_text: [{ text: { content: actualResult } }] };
-                }
-                const data = JSON.stringify({ properties: updateProps });
-                await new Promise((resolve, reject) => {
-                    const req = https.request({
-                        hostname: 'api.notion.com',
-                        path: `/v1/pages/${page.id}`,
-                        method: 'PATCH',
-                        headers: {
-                            'Authorization': 'Bearer ' + API_KEY,
-                            'Notion-Version': '2022-06-28',
-                            'Content-Type': 'application/json'
-                        }
-                    }, res => {
-                        let d = '';
-                        res.on('data', c => d += c);
-                        res.on('end', () => {
-                            if (res.statusCode >= 400) reject(new Error(`HTTP ${res.statusCode}`));
-                            else resolve();
-                        });
-                    });
-                    req.on('error', reject);
-                    req.write(data);
-                    req.end();
-                });
-                console.log(`📝 ${matchNum} ${home} vs ${away} - 补充欧赔 + 比分`);
-                updated++;
-            } catch (e) {
-                console.log(`❌ ${matchNum} 补充失败: ${e.message}`);
-            }
-            continue;
+                const oddProps = {};
+                if (matchOdds.jc_win) oddProps['终盘竞彩欧赔胜'] = { number: matchOdds.jc_win };
+                if (matchOdds.jc_draw) oddProps['终盘竞彩欧赔平'] = { number: matchOdds.jc_draw };
+                if (matchOdds.jc_loss) oddProps['终盘竞彩欧赔负'] = { number: matchOdds.jc_loss };
+                if (matchOdds.bj_win) oddProps['终盘百家欧赔胜'] = { number: matchOdds.bj_win };
+                if (matchOdds.bj_draw) oddProps['终盘百家欧赔平'] = { number: matchOdds.bj_draw };
+                if (matchOdds.bj_loss) oddProps['终盘百家欧赔负'] = { number: matchOdds.bj_loss };
+                if (matchOdds.iw_win) oddProps['终盘Interwetten胜'] = { number: matchOdds.iw_win };
+                if (matchOdds.iw_draw) oddProps['终盘Interwetten平'] = { number: matchOdds.iw_draw };
+                if (matchOdds.iw_loss) oddProps['终盘Interwetten负'] = { number: matchOdds.iw_loss };
+                if (matchOdds.rq_win) oddProps['终盘让球指数胜'] = { number: matchOdds.rq_win };
+                if (matchOdds.rq_draw) oddProps['终盘让球指数平'] = { number: matchOdds.rq_draw };
+                if (matchOdds.rq_loss) oddProps['终盘让球指数负'] = { number: matchOdds.rq_loss };
+                if (matchOdds.macau) oddProps['终盘竞彩澳门亚盘'] = { rich_text: [{ text: { content: matchOdds.macau } }] };
+                await notionPatch(page.id, oddProps);
+            } catch(e) {}
         }
         
         // 获取预测（优先用Notion中的竞彩预测）
         const pred = notionPred || '';
         const predResult = predictionToResult(pred);
         
-        // 获取让球预测和让球数（从Notion和本地）
+        // 获取让球预测（从Notion）
         const rqPred = props['让球预测']?.rich_text?.[0]?.plain_text || '';
-        const predInfo = predictions[matchNum] || {};
-        const handicap = predInfo.handicap || 0;
+        // 从让球预测文本直接提取让球数（不依赖本地文件解析，本地可能失败）
+        let handicap = 0;
+        if (rqPred) {
+            const shou = rqPred.match(/受让(\d+(?:\.5)?)球/);
+            const rang = rqPred.match(/(?:^|[^受])让(\d+(?:\.5)?)球/);
+            if (shou) handicap = -parseFloat(shou[1]);
+            else if (rang) handicap = parseFloat(rang[1]);
+        }
         
         // 获取实际赛果
         const result = matchResults[matchNum];
@@ -1117,12 +1198,19 @@ async function main() {
     try {
         console.log('\n[5/5] 全量刷新历史汇总...');
         const { execSync } = require('child_process');
-        const result = execSync('node jingcai/sync_summary.js', { cwd: process.cwd(), stdio: ['pipe', 'pipe', 'pipe'] });
+        const result = execSync('node sync_summary.js', { cwd: __dirname, stdio: 'pipe', timeout: 300000 });
         const output = result.toString();
-        const lines = output.split('\n').filter(l => l.includes('✅') || l.includes('❌') || l.includes('写入') || l.includes('清空'));
-        lines.forEach(l => console.log(l));
+        // 只输出关键行
+        const lines = output.split('\n');
+        lines.filter(l => l.includes('✅') || l.includes('❌') || l.includes('总计') || l.includes('分组') || l.includes('清空') || l.includes('已写入') || l.includes('同步')).forEach(l => console.log(l));
+        console.log('✅ 历史汇总已刷新');
     } catch (e) {
         console.log(`⚠️ 历史汇总刷新失败: ${e.message}`);
+        if (e.stdout) {
+            const out = e.stdout.toString();
+            const keyLines = out.split('\n').filter(l => l.includes('❌') || l.includes('[FATAL]'));
+            keyLines.forEach(l => console.log('  ' + l));
+        }
     }
 
     // 保存反馈日志

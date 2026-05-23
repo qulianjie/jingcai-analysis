@@ -58,7 +58,7 @@ def gd(a, b):
         elif fb > fa + 0.01: return '\u2b06'
     except:
 
-        log.warn(f"[step918] 解析异常")
+        pass
     return '\u27a1'
 
 def dir_str3(iw, id_, il, lw, ld, ll):
@@ -100,7 +100,7 @@ def _load_fid_cache():
             return True
         except:
 
-            log.warn(f"[step918] 解析异常")
+            pass
     return False
 
 def _from_cache(fid, data_type):
@@ -139,7 +139,7 @@ def fetch_odds(fid, use_cache=True):
                     try: nums.append(float(val))
                     except:
 
-                        log.warn(f"[step918] 解析异常")
+                        pass
                 if len(nums) < 6: continue
                 if td0 == '1':
                     jc = {k: '{:.2f}'.format(v) for k, v in zip(['iw','id','il','lw','ld','ll'], nums)}
@@ -172,7 +172,7 @@ def fetch_rangqiu(fid, use_cache=True):
                     try: nums.append(float(val))
                     except:
 
-                        log.warn(f"[step918] 解析异常")
+                        pass
                 if len(nums) >= 6:
                     return {k: '{:.2f}'.format(v) for k, v in zip(['iw','id','il','lw','ld','ll'], nums)}
         return None
@@ -260,7 +260,7 @@ from _league_util import _league_match
 # ======================== MAIN ========================
 
 # --- Current match benchmark ---
-log.info('当前比赛基准赔率:')
+print('当前比赛基准赔率:')
 cur = fetch_odds(FID, use_cache=False)
 b_jc = dir_str3(cur['jc']['iw'],cur['jc']['id'],cur['jc']['il'],cur['jc']['lw'],cur['jc']['ld'],cur['jc']['ll']) if cur['jc'] else ''
 b_iw = dir_str3(cur['iw']['iw'],cur['iw']['id'],cur['iw']['il'],cur['iw']['lw'],cur['iw']['ld'],cur['iw']['ll']) if cur['iw'] else ''
@@ -270,23 +270,23 @@ if cur['iw']: print('  IWC  {} -> {} ({})'.format(cur['iw']['iw']+'/'+cur['iw'][
 if cur['av']: print('  百家 {} -> {} ({})'.format(cur['av']['iw']+'/'+cur['av']['id']+'/'+cur['av']['il'], cur['av']['lw']+'/'+cur['av']['ld']+'/'+cur['av']['ll'], b_av))
 
 # --- Fetch all team data ---
-log.info()
-log.info('获取主队数据...')
+print()
+print('获取主队数据...')
 all_home = fetch_team(HOME_ID)
-log.info('  主队总记录: {} 条'.format(len(all_home)))
+print('  主队总记录: {} 条'.format(len(all_home)))
 
-log.info('获取客队数据...')
+print('获取客队数据...')
 all_away = fetch_team(AWAY_ID)
-log.info('  客队总记录: {} 条'.format(len(all_away)))
+print('  客队总记录: {} 条'.format(len(all_away)))
 
 # --- Step 9: 主队主场 ---
 home_f = filter3(all_home, HOME_ID, 'home', LEAGUE, MACAU_LINE)
-log.info()
-log.info('='*60)
-log.info('第九步：主队主场·相同联赛·澳门亚盘同赔')
-log.info('='*60)
-log.info('筛选: 主场(HOMETEAMID={}) + 联赛({}) + 盘口({})'.format(HOME_ID, LEAGUE, MACAU_LINE))
-log.info('过滤后: {} 场'.format(len(home_f)))
+print()
+print('='*60)
+print('第九步：主队主场·相同联赛·澳门亚盘同赔')
+print('='*60)
+print('筛选: 主场(HOMETEAMID={}) + 联赛({}) + 盘口({})'.format(HOME_ID, LEAGUE, MACAU_LINE))
+print('过滤后: {} 场'.format(len(home_f)))
 
 w = sum(1 for m in home_f if m['result']=='胜')
 dr = sum(1 for m in home_f if m['result']=='平')
@@ -316,10 +316,10 @@ out.append('### 统计: 共{} 场 | 胜率{}% | 赢盘率{}% | 场均进球{} | 
     tt, round(w/max(tt,1)*100,1), round(wp/max(tt,1)*100,1), round(tg/max(tt,1),1), round(tc/max(tt,1),1)))
 
 # --- Step 10-13: 主队欧赔/让球 ---
-log.info()
-log.info('='*60)
-log.info('第十-十二步：主队比赛欧赔分析')
-log.info('='*60)
+print()
+print('='*60)
+print('第十-十二步：主队比赛欧赔分析')
+print('='*60)
 
 # Collect all odds data first
 all_odds_home = []
@@ -421,12 +421,12 @@ out.append(stats_summary(rq_s))
 
 # --- Step 14: 客队客场 ---
 away_f = filter3(all_away, AWAY_ID, 'away', LEAGUE, MACAU_LINE)
-log.info()
-log.info('='*60)
-log.info('第十四步：客队客场·相同联赛·澳门亚盘同赔')
-log.info('='*60)
-log.info('筛选: 客场(AWAYTEAMID={}) + 联赛({}) + 盘口({})'.format(AWAY_ID, LEAGUE, MACAU_LINE))
-log.info('过滤后: {} 场'.format(len(away_f)))
+print()
+print('='*60)
+print('第十四步：客队客场·相同联赛·澳门亚盘同赔')
+print('='*60)
+print('筛选: 客场(AWAYTEAMID={}) + 联赛({}) + 盘口({})'.format(AWAY_ID, LEAGUE, MACAU_LINE))
+print('过滤后: {} 场'.format(len(away_f)))
 
 w2 = sum(1 for m in away_f if m['result']=='胜')
 dr2 = sum(1 for m in away_f if m['result']=='平')
@@ -456,10 +456,10 @@ out.append('### 统计: 共{} 场 | 胜率{}% | 赢盘率{}% | 场均进球{} | 
     tt2, round(w2/max(tt2,1)*100,1), round(wp2/max(tt2,1)*100,1), round(tg2/max(tt2,1),1), round(tc2/max(tt2,1),1)))
 
 # --- Step 15-18: 客队欧赔/让球 ---
-log.info()
-log.info('='*60)
-log.info('第十五-十八步：客队比赛欧赔分析')
-log.info('='*60)
+print()
+print('='*60)
+print('第十五-十八步：客队比赛欧赔分析')
+print('='*60)
 
 # Collect all odds data first
 all_odds_away = []
@@ -585,7 +585,7 @@ else:
 os.makedirs(os.path.dirname(home_path), exist_ok=True)
 with open(home_path, 'w', encoding='utf-8') as f:
     f.write('\n'.join(home_out))
-log.info('输出(主队): ' + home_path)
+print('输出(主队): ' + home_path)
 
 # Write away team file (steps 14-18)
 if STEP14_OUT:
@@ -595,4 +595,4 @@ else:
 os.makedirs(os.path.dirname(away_path), exist_ok=True)
 with open(away_path, 'w', encoding='utf-8') as f:
     f.write('\n'.join(away_out))
-log.info('输出(客队): ' + away_path)
+print('输出(客队): ' + away_path)

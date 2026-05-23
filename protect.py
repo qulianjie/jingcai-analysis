@@ -48,63 +48,13 @@ def _get_running_python_procs():
     return procs
 
 def lock(name, timeout=0):
-    """获取命名锁。name='batch', 'pipeline', 'step0'等"""
-    ensure_dirs()
-    lock_file = os.path.join(LOCK_DIR, '%s.lock' % name)
-    
-    if os.path.exists(lock_file):
-        try:
-            with open(lock_file, 'r', encoding='utf-8') as f:
-                info = json.load(f)
-            lock_time = datetime.strptime(info['time'], '%Y-%m-%d %H:%M:%S')
-            age = (datetime.now() - lock_time).total_seconds()
-            if age > 7200:  # 2小时过期
-                print('[protect] 锁 %s 已过期 (age=%.0fs)，清理' % (name, age))
-                os.remove(lock_file)
-            else:
-                print('[protect] 锁 %s 已被占用:' % name)
-                print('  PID: %s' % info['pid'])
-                print('  脚本: %s' % info.get('script', 'unknown'))
-                print('  时间: %s' % info['time'])
-                print('  已运行: %.0fs' % age)
-                if timeout > 0:
-                    print('[protect] 等待 %ds 后重试...' % timeout)
-                    time.sleep(timeout)
-                    return lock(name, 0)
-                return False
-        except (json.JSONDecodeError, KeyError, ValueError):
-            os.remove(lock_file)
-    
-    info = {
-        'pid': os.getpid(),
-        'script': os.path.basename(sys.argv[0]),
-        'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'session': os.environ.get('OPENCLAW_SESSION_KEY', 'unknown')
-    }
-    with open(lock_file, 'w', encoding='utf-8') as f:
-        json.dump(info, f, ensure_ascii=False, indent=2)
-    print('[protect] OK 锁 %s 已获取 (PID %s)' % (name, os.getpid()))
+    """获取命名锁。已禁用：永远返回True"""
     return True
 
 def unlock(name):
-    """释放命名锁"""
-    ensure_dirs()
-    lock_file = os.path.join(LOCK_DIR, '%s.lock' % name)
-    if not os.path.exists(lock_file):
-        print('[protect] 锁 %s 不存在' % name)
-        return False
-    try:
-        with open(lock_file, 'r', encoding='utf-8') as f:
-            info = json.load(f)
-        if info['pid'] != os.getpid():
-            print('[protect] 锁 %s 不是当前进程持有 (PID %s)' % (name, info['pid']))
-            return False
-        os.remove(lock_file)
-        print('[protect] OK 锁 %s 已释放' % name)
-        return True
-    except Exception as e:
-        print('[protect] 释放锁失败: %s' % e)
-        return False
+    """释放命名锁。已禁用：空操作"""
+    return True
+
 
 def list_locks():
     """列出所有锁"""

@@ -15,7 +15,9 @@ const DATABASE_ID = '35491ad7-17ba-81cc-aa04-ce53f7234e17';
 const STEPS_DATABASE_ID = '35d91ad7-17ba-80fb-a45c-cb6471eaf4d9';
 const STEPS_DB_UPDATED = {};
 const JINGCAI_DIR = path.join(__dirname);
-const TASKS_DIR = path.join(JINGCAI_DIR, 'tasks');
+const ENV_TASKS_DIR = process.env.NOTION_TASKS_DIR;
+const TASKS_DIR = ENV_TASKS_DIR ? path.resolve(ENV_TASKS_DIR) : path.join(JINGCAI_DIR, 'tasks');
+if (ENV_TASKS_DIR) { console.log('[INFO] NOTION_TASKS_DIR: ' + TASKS_DIR); }
 
 const headers = {
   'Authorization': 'Bearer ' + NOTION_API_KEY,
@@ -285,8 +287,10 @@ function extractMatchInfo(reportPath, matchDir, metaData) {
     // === 提取即时盘赔率数据 ===
     let g1Dir = path.join(matchDir, 'group01_europe');
     if (fs.existsSync(g1Dir)) {
-      const s1 = path.join(g1Dir, 'step1_europe_base.txt');
-      if (fs.existsSync(s1)) {
+      const s1_md = path.join(g1Dir, 'step01_europe_basic.md');
+      const s1_txt = path.join(g1Dir, 'step1_europe_base.txt');
+      const s1 = fs.existsSync(s1_md) ? s1_md : (fs.existsSync(s1_txt) ? s1_txt : null);
+      if (s1) {
         const c1 = fs.readFileSync(s1, 'utf8');
         const lines1 = c1.split('\n');
         for (const line of lines1) {
@@ -316,8 +320,10 @@ function extractMatchInfo(reportPath, matchDir, metaData) {
     // 让球指数（初盘+即时值）
     const g2Dir = path.join(matchDir, 'group02_handicap');
     if (fs.existsSync(g2Dir)) {
-      const s4 = path.join(g2Dir, 'step4_handicap_base.txt');
-      if (fs.existsSync(s4)) {
+      const s4_md = path.join(g2Dir, 'step04_handicap_basic.md');
+      const s4_txt = path.join(g2Dir, 'step4_handicap_base.txt');
+      const s4 = fs.existsSync(s4_md) ? s4_md : (fs.existsSync(s4_txt) ? s4_txt : null);
+      if (s4) {
         const c4 = fs.readFileSync(s4, 'utf8');
         const lines4 = c4.split('\n');
         for (const line of lines4) {
@@ -353,8 +359,10 @@ function extractMatchInfo(reportPath, matchDir, metaData) {
     }
     // fallback: 从step6提取（兼容旧数据）
     if (!result.macau_live && fs.existsSync(g3Dir)) {
-      const s6 = path.join(g3Dir, 'step6_asian_base.txt');
-      if (fs.existsSync(s6)) {
+      const s6_md = path.join(g3Dir, 'step06_asian_basic.md');
+      const s6_txt = path.join(g3Dir, 'step6_asian_base.txt');
+      const s6 = fs.existsSync(s6_md) ? s6_md : (fs.existsSync(s6_txt) ? s6_txt : null);
+      if (s6) {
         const c6 = fs.readFileSync(s6, 'utf8');
         const lines6 = c6.split('\n');
         for (const line of lines6) {
@@ -374,8 +382,10 @@ function extractMatchInfo(reportPath, matchDir, metaData) {
     // g1Dir already declared above
     if (fs.existsSync(g1Dir)) {
       // step1_europe_base.txt - 欧赔基础
-      const s1 = path.join(g1Dir, 'step1_europe_base.txt');
-      if (fs.existsSync(s1)) {
+      const s1_md = path.join(g1Dir, 'step01_europe_basic.md');
+      const s1_txt = path.join(g1Dir, 'step1_europe_base.txt');
+      const s1 = fs.existsSync(s1_md) ? s1_md : (fs.existsSync(s1_txt) ? s1_txt : null);
+      if (s1) {
         const c1 = fs.readFileSync(s1, 'utf8');
         // 提取竞彩官方赔率变化
         const scm = c1.match(/竞彩官方\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([^|]+)/);
@@ -383,14 +393,26 @@ function extractMatchInfo(reportPath, matchDir, metaData) {
           const changes = scm[7].trim();
           const initOdds = `${scm[1]}/${scm[2]}/${scm[3]}`;
           const liveOdds = `${scm[4]}/${scm[5]}/${scm[6]}`;
-          result.oupei_base = `即时${liveOdds} 变化${changes}`;
+          result.jc_panlu = `${changes}`;
+        }
+        // Interwetten赔率变化
+        const iwm = c1.match(/Interwetten\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([^|]+)/);
+        if (iwm) {
+          result.iw_panlu = `${iwm[7].trim()}`;
+        }
+        // 百家平均赔率变化
+        const bjm = c1.match(/百家平均\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([^|]+)/);
+        if (bjm) {
+          result.bj_panlu = `${bjm[7].trim()}`;
         }
       }
       // step2_jingcai_same.txt - 竞彩同赔
-      const s2 = path.join(g1Dir, 'step2_jingcai_same.txt');
-      if (fs.existsSync(s2)) {
+      const s2_md = path.join(g1Dir, 'step02_jingcai_same.md');
+      const s2_txt = path.join(g1Dir, 'step2_jingcai_same.txt');
+      const s2 = fs.existsSync(s2_md) ? s2_md : (fs.existsSync(s2_txt) ? s2_txt : null);
+      if (s2) {
         const c2 = fs.readFileSync(s2, 'utf8');
-        const countMatch = c2.match(/竞彩同赔\s*共\s*(\d+)\s*场/);
+        const countMatch = c2.match(/共(\d+)\s*场/);
         const winMatch = c2.match(/胜(\d+)\s*平(\d+)\s*负(\d+)/);
         if (countMatch) {
           result.jingcai_same_count = `${countMatch[1]}场`;
@@ -402,10 +424,12 @@ function extractMatchInfo(reportPath, matchDir, metaData) {
         }
       }
       // step3_interwetten_same.txt - IW同赔
-      const s3 = path.join(g1Dir, 'step3_interwetten_same.txt');
-      if (fs.existsSync(s3)) {
+      const s3_md = path.join(g1Dir, 'step03_interwetten_same.md');
+      const s3_txt = path.join(g1Dir, 'step3_interwetten_same.txt');
+      const s3 = fs.existsSync(s3_md) ? s3_md : (fs.existsSync(s3_txt) ? s3_txt : null);
+      if (s3) {
         const c3 = fs.readFileSync(s3, 'utf8');
-        const iwCountMatch = c3.match(/Interwetten\s*同赔\s*共\s*(\d+)\s*场/);
+        const iwCountMatch = c3.match(/共(\d+)\s*场/);
         const iwWinMatch = c3.match(/胜(\d+)\s*平(\d+)\s*负(\d+)/);
         if (iwCountMatch) {
           result.iw_same_count = `${iwCountMatch[1]}场`;
@@ -421,11 +445,24 @@ function extractMatchInfo(reportPath, matchDir, metaData) {
     // 读取group02_handicap下的文件
     // g2Dir already declared above
     if (fs.existsSync(g2Dir)) {
+      // 让球指数盘路(从step04提取)
+      const rqMd = path.join(g2Dir, 'step04_handicap_basic.md');
+      const rqTxt = path.join(g2Dir, 'step4_handicap_base.txt');
+      const rqFile = fs.existsSync(rqMd) ? rqMd : (fs.existsSync(rqTxt) ? rqTxt : null);
+      if (rqFile) {
+        const c4panlu = fs.readFileSync(rqFile, 'utf8');
+        const rqm2 = c4panlu.match(/竞彩官方\s*\|\s*[^|]+\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)/);
+        if (rqm2) {
+          const rq_dir = [(rqm2[4]>rqm2[1]?'⬆':rqm2[4]<rqm2[1]?'⬇':'➡'),(rqm2[5]>rqm2[2]?'⬆':rqm2[5]<rqm2[2]?'⬇':'➡'),(rqm2[6]>rqm2[3]?'⬆':rqm2[6]<rqm2[3]?'⬇':'➡')]; result.rq_panlu = rq_dir.join('');
+        }
+      }
       // step5_handicap_same.txt - 让球同赔
-      const s5 = path.join(g2Dir, 'step5_handicap_same.txt');
-      if (fs.existsSync(s5)) {
+      const s5_md = path.join(g2Dir, 'step05_handicap_same.md');
+      const s5_txt = path.join(g2Dir, 'step5_handicap_same.txt');
+      const s5 = fs.existsSync(s5_md) ? s5_md : (fs.existsSync(s5_txt) ? s5_txt : null);
+      if (s5) {
         const c5 = fs.readFileSync(s5, 'utf8');
-        const hCountMatch = c5.match(/让球同赔\s*共\s*(\d+)\s*场/);
+        const hCountMatch = c5.match(/共(\d+)\s*场/);
         if (hCountMatch) {
           result.handicap_same_count = `${hCountMatch[1]}场`;
         }
@@ -437,17 +474,44 @@ function extractMatchInfo(reportPath, matchDir, metaData) {
     if (fs.existsSync(g3Dir)) {
       // step6_asian_base.txt - 亚盘基础（不写macau_asian，报告里已有趋势格式）
       // step7_macau_same.txt - 澳门亚盘同赔
-      const s7 = path.join(g3Dir, 'step7_macau_same.txt');
-      if (fs.existsSync(s7)) {
+      const s7_md = path.join(g3Dir, 'step07_macau_same.md');
+      const s7_txt = path.join(g3Dir, 'step7_macau_same.txt');
+      const s7 = fs.existsSync(s7_md) ? s7_md : (fs.existsSync(s7_txt) ? s7_txt : null);
+      if (s7) {
         const c7 = fs.readFileSync(s7, 'utf8');
         const mCountMatch = c7.match(/共\s*(\d+)\s*场/);
         if (mCountMatch) {
           result.macau_same_count = `${mCountMatch[1]}场`;
         }
       }
+      // 澳门亚盘盘路(从step06提取)
+      // 格式: "半球 → 半球" (初盘盘口 → 即时盘盘口)
+      const macauMd = path.join(g3Dir, 'step06_asian_basic.md');
+      const macauTxt = path.join(g3Dir, 'step6_asian_base.txt');
+      const macauFile = fs.existsSync(macauMd) ? macauMd : (fs.existsSync(macauTxt) ? macauTxt : null);
+      if (macauFile) {
+        const c6panlu = fs.readFileSync(macauFile, 'utf8');
+        for (const line of c6panlu.split('\n')) {
+          if (!line.includes('澳门')) continue;
+          // 用 | 周边有空格的方式分割列，避免水位值内部的 | 被误切
+          // 格式: | 澳门 | 平手/半球 0.960|0.880 | 平手/半球 0.900|0.940 |
+          // 新格式: | 澳门 | 半球 降（主水0.840|客水1.000） | 半球/一球（主水0.890|客水0.950） |
+          const lineClean = line.replace(/^\|\s*|\s*\|$/g, '').trim();
+          const parts = lineClean.split(/\s+\|\s+/);
+          if (parts.length >= 3) {
+            // 提取初盘盘口(去掉"降""升"等标记和水位)
+            const initRaw = (parts[1] || '').split(/\s+/)[0];
+            const liveRaw = (parts[2] || '').split(/\s+/)[0];
+            result.macau_panlu = initRaw + ' → ' + liveRaw;
+          }
+          break;
+        }
+      }
       // step8_same_league.txt - 同联赛亚盘统计
-      const s8 = path.join(g3Dir, 'step8_same_league.txt');
-      if (fs.existsSync(s8)) {
+      const s8_md = path.join(g3Dir, 'step08_same_league.md');
+      const s8_txt = path.join(g3Dir, 'step8_same_league.txt');
+      const s8 = fs.existsSync(s8_md) ? s8_md : (fs.existsSync(s8_txt) ? s8_txt : null);
+      if (s8) {
         const c8 = fs.readFileSync(s8, 'utf8');
         const totalMatch = c8.match(/总场次:\s*(\d+)/);
         const winRateMatch = c8.match(/主场胜率:\s*([\d.]+)%/);
@@ -463,8 +527,10 @@ function extractMatchInfo(reportPath, matchDir, metaData) {
     // 读取group04_teamA下的文件
     const g4Dir = path.join(matchDir, 'group04_teamA');
     if (fs.existsSync(g4Dir)) {
-      const s9 = path.join(g4Dir, 'step9_home_history.txt');
-      if (fs.existsSync(s9)) {
+      const s9_md = path.join(g4Dir, 'step09_13_teamA.md');
+      const s9_txt = path.join(g4Dir, 'step9_home_history.txt');
+      const s9 = fs.existsSync(s9_md) ? s9_md : (fs.existsSync(s9_txt) ? s9_txt : null);
+      if (s9) {
         const c9 = fs.readFileSync(s9, 'utf8');
         const homeCountMatch = c9.match(/共(\d+)场/);
         const homeWinMatch = c9.match(/胜率([\d.]+)%/);
@@ -480,8 +546,10 @@ function extractMatchInfo(reportPath, matchDir, metaData) {
     // 读取group05_teamB下的文件
     const g5Dir = path.join(matchDir, 'group05_teamB');
     if (fs.existsSync(g5Dir)) {
-      const s14 = path.join(g5Dir, 'step14_away_history.txt');
-      if (fs.existsSync(s14)) {
+      const s14_md = path.join(g5Dir, 'step14_18_teamB.md');
+      const s14_txt = path.join(g5Dir, 'step14_away_history.txt');
+      const s14 = fs.existsSync(s14_md) ? s14_md : (fs.existsSync(s14_txt) ? s14_txt : null);
+      if (s14) {
         const c14 = fs.readFileSync(s14, 'utf8');
         const awayCountMatch = c14.match(/共(\d+)场/);
         const awayWinMatch = c14.match(/胜率([\d.]+)%/);
@@ -564,12 +632,28 @@ function extractMatchInfo(reportPath, matchDir, metaData) {
 
   // 让球预测(从最终结论提取)
   let rq_pred = '';
+  let rq_pred_full = '';
   const rqm = conclusionText.match(/让球预测[::]\s*([^\n|]+)/);
-  if (rqm) rq_pred = rqm[1].trim();
-  if (!rq_pred) {
+  if (rqm) rq_pred_full = rqm[1].trim();
+  if (!rq_pred_full) {
     // 新版表格格式: | **让球预测** | 让2球 让球客胜（数据不足，仅供参考）（信心55%） |
     const rq2 = content.match(/\|\s*\*\*让球预测\*\*\s*\|\s*([^|]+)\s*\|/);
-    if (rq2) rq_pred = rq2[1].trim();
+    if (rq2) rq_pred_full = rq2[1].trim();
+  }
+  // 提取核心方向、让球数和信心，去掉中间备注文本
+  // 格式: "让1球 让球客胜（信心不足...）（信心0%）" → "让1球 让球客胜（0%）"
+  const rqCore = rq_pred_full.match(/(让球主胜|让球客胜|让球平)/);
+  const rqPrefix = rq_pred_full.match(/^((?:让\d+(?:\.5)?球|受让\d+(?:\.5)?球|平手)\s*)/);
+  const rqConf = rq_pred_full.match(/（信心(\d+)%）/);
+  let rqDirection = rqCore ? rqCore[1] : '';
+  let rqHandicapText = rqPrefix ? rqPrefix[1].trim() : '';
+  let rqConfText = rqConf ? '（' + rqConf[1] + '%）' : '';
+  if (rqHandicapText && rqDirection) {
+    rq_pred = rqHandicapText + ' ' + rqDirection + rqConfText;
+  } else if (rqDirection) {
+    rq_pred = rqDirection + rqConfText;
+  } else {
+    rq_pred = rq_pred_full;
   }
 
   // 让球数(从第4步让球指数明细提取)
@@ -592,7 +676,7 @@ function extractMatchInfo(reportPath, matchDir, metaData) {
   // 提取澳门亚盘即时盘口（从step6提取即时盘）
   let macau_asian_instant = '';
   if (matchDir && fs.existsSync(matchDir)) {
-    const step6Path = path.join(matchDir, 'group03_asian', 'step6_asian_base.txt');
+    const step6Path = path.join(matchDir, 'group03_asian', 'step06_asian_basic.md');
     if (fs.existsSync(step6Path)) {
       const c6 = fs.readFileSync(step6Path, 'utf8');
       const lines6 = c6.split('\n');
@@ -616,51 +700,98 @@ function extractMatchInfo(reportPath, matchDir, metaData) {
     }
   }
   
-  if (matchDir && fs.existsSync(matchDir)) {
-    // Step25: 庄家盈亏
+  // 庄家数据:优先从matchDir读取,备选从JINGCAI_DIR/tasks/DATE/data/读取
+  function readStep25Data(baseDir) {
+    const s25Path = path.join(baseDir, 'step25_zhuangjia.json');
+    if (!fs.existsSync(s25Path)) return null;
     try {
-      const s25Path = path.join(matchDir, 'step25_zhuangjia.json');
-      if (fs.existsSync(s25Path)) {
-        const s25 = JSON.parse(fs.readFileSync(s25Path, 'utf8'));
-        const labels = s25.labels || {};
-        const parts = [];
-        for (const cat of ['主胜', '平局', '客胜']) {
-          if (labels[cat]) {
-            const l = labels[cat];
-            parts.push(`${cat}:${l.bet_pct || '-'}/成交${l.volume || '-'}/庄家${l.profit || '-'}`);
-          }
+      const s25 = JSON.parse(fs.readFileSync(s25Path, 'utf8'));
+      const labels = s25.labels || {};
+      const parts = [];
+      for (const cat of ['主胜', '平局', '客胜']) {
+        if (labels[cat]) {
+          const l = labels[cat];
+          parts.push(`${cat}:${l.bet_pct || '-'}/成交${l.volume || '-'}/庄家${l.profit || '-'}`);
         }
-        if (parts.length > 0) s25_zjyk = parts.join(' | ');
       }
+      if (parts.length > 0) return parts.join(' | ');
     } catch(e) {}
-    
-    // Step26: 盈亏占比分析
+    return null;
+  }
+  if (matchDir && fs.existsSync(matchDir)) {
+    s25_zjyk = readStep25Data(matchDir) || '';
+    // 备选:从JINGCAI_DIR/tasks/DATE/data读取
+    // 备选:从JINGCAI_DIR/tasks/DATE/data读取(仅当比赛编号匹配)
+    if (!s25_zjyk && metaData && metaData.matchnum) {
+      const dateMatch = matchDir.match(/(\d{4}-\d{2}-\d{2})/);
+      if (dateMatch) {
+        const altDir = path.join(JINGCAI_DIR, 'tasks', dateMatch[1], 'data');
+        if (fs.existsSync(altDir)) {
+          try {
+            const fp = path.join(altDir, 'step25_zhuangjia.json');
+            if (fs.existsSync(fp)) {
+              const tmp = JSON.parse(fs.readFileSync(fp, 'utf8'));
+              if (tmp.match_num === metaData.matchnum) {
+                s25_zjyk = readStep25Data(altDir);
+              }
+            }
+          } catch(e) {}
+        }
+      }
+    }
+  }
+  // Step26: 盈亏占比分析(备注:当前pipeline未生成此文件,保留占位)
+  if (matchDir) {
     try {
       const s26Path = path.join(matchDir, 'step26_profit_ratio.json');
-      if (fs.existsSync(s26Path)) {
+      if (!fs.existsSync(s26Path)) {
+        const dateMatch = matchDir.match(/(\d{4}-\d{2}-\d{2})/);
+        if (dateMatch) {
+          const altDir = path.join(JINGCAI_DIR, 'tasks', dateMatch[1], 'data');
+          const altPath = path.join(altDir, 'step26_profit_ratio.json');
+          if (fs.existsSync(altPath)) {
+            const s26 = JSON.parse(fs.readFileSync(altPath, 'utf8'));
+            const analysis = s26.analysis || {};
+            s26_zzhk = analysis['庄家最看好'] || '';
+            const dirs = [];
+            if (analysis['庄家胜盈亏']) dirs.push('胜:' + analysis['庄家胜盈亏']);
+            if (analysis['庄家平盈亏']) dirs.push('平:' + analysis['庄家平盈亏']);
+            if (analysis['庄家负盈亏']) dirs.push('负:' + analysis['庄家负盈亏']);
+            if (dirs.length > 0) s26_zjyf = dirs.join(' | ');
+            const pr = analysis['盈亏占比'] || {};
+            const pr_parts = [];
+            if (pr['胜'] !== undefined) pr_parts.push('胜:' + (pr['胜']*100).toFixed(1) + '%');
+            if (pr['平'] !== undefined) pr_parts.push('平:' + (pr['平']*100).toFixed(1) + '%');
+            if (pr['负'] !== undefined) pr_parts.push('负:' + (pr['负']*100).toFixed(1) + '%');
+            if (pr_parts.length > 0) s26_ykbz = pr_parts.join(' | ');
+            const bp = analysis['投注占比'] || {};
+            const bp_parts = [];
+            if (bp['胜']) bp_parts.push('胜:' + bp['胜'] + '%');
+            if (bp['平']) bp_parts.push('平:' + bp['平'] + '%');
+            if (bp['负']) bp_parts.push('负:' + bp['负'] + '%');
+            if (bp_parts.length > 0) s26_tzbz = bp_parts.join(' | ');
+          }
+        }
+      } else {
         const s26 = JSON.parse(fs.readFileSync(s26Path, 'utf8'));
         const analysis = s26.analysis || {};
-        // 庄家最看好
         s26_zzhk = analysis['庄家最看好'] || '';
-        // 庄家盈亏方向
         const dirs = [];
-        if (analysis['庄家胜盈亏']) dirs.push(`胜:${analysis['庄家胜盈亏']}`);
-        if (analysis['庄家平盈亏']) dirs.push(`平:${analysis['庄家平盈亏']}`);
-        if (analysis['庄家负盈亏']) dirs.push(`负:${analysis['庄家负盈亏']}`);
+        if (analysis['庄家胜盈亏']) dirs.push('胜:' + analysis['庄家胜盈亏']);
+        if (analysis['庄家平盈亏']) dirs.push('平:' + analysis['庄家平盈亏']);
+        if (analysis['庄家负盈亏']) dirs.push('负:' + analysis['庄家负盈亏']);
         if (dirs.length > 0) s26_zjyf = dirs.join(' | ');
-        // 盈亏占比
         const pr = analysis['盈亏占比'] || {};
         const pr_parts = [];
-        if (pr['胜'] !== undefined) pr_parts.push(`胜:${(pr['胜']*100).toFixed(1)}%`);
-        if (pr['平'] !== undefined) pr_parts.push(`平:${(pr['平']*100).toFixed(1)}%`);
-        if (pr['负'] !== undefined) pr_parts.push(`负:${(pr['负']*100).toFixed(1)}%`);
+        if (pr['胜'] !== undefined) pr_parts.push('胜:' + (pr['胜']*100).toFixed(1) + '%');
+        if (pr['平'] !== undefined) pr_parts.push('平:' + (pr['平']*100).toFixed(1) + '%');
+        if (pr['负'] !== undefined) pr_parts.push('负:' + (pr['负']*100).toFixed(1) + '%');
         if (pr_parts.length > 0) s26_ykbz = pr_parts.join(' | ');
-        // 投注占比
         const bp = analysis['投注占比'] || {};
         const bp_parts = [];
-        if (bp['胜']) bp_parts.push(`胜:${bp['胜']}%`);
-        if (bp['平']) bp_parts.push(`平:${bp['平']}%`);
-        if (bp['负']) bp_parts.push(`负:${bp['负']}%`);
+        if (bp['胜']) bp_parts.push('胜:' + bp['胜'] + '%');
+        if (bp['平']) bp_parts.push('平:' + bp['平'] + '%');
+        if (bp['负']) bp_parts.push('负:' + bp['负'] + '%');
         if (bp_parts.length > 0) s26_tzbz = bp_parts.join(' | ');
       }
     } catch(e) {}
@@ -685,6 +816,11 @@ function extractMatchInfo(reportPath, matchDir, metaData) {
     pred,
     rq_pred,
     handicap,
+    oupei_jingcai_panlu: dataFiles.jc_panlu || '',
+    oupei_iw_panlu: dataFiles.iw_panlu || '',
+    oupei_baijia_panlu: dataFiles.bj_panlu || '',
+    macau_panlu: dataFiles.macau_panlu || '',
+    rq_panlu: dataFiles.rq_panlu || '',
     s25_zjyk,
     s26_zzhk,
     s26_zjyf,
@@ -804,6 +940,11 @@ async function addMatch(dateStr, info) {
     '竞彩预测': notionRichTextProp(info.pred),
     '让球预测': notionRichTextProp(info.rq_pred),
     '风险提示': notionRichTextProp(info.risk),
+    '欧赔竞彩盘路': notionRichTextProp(info.oupei_jingcai_panlu),
+    '欧赔interwetten盘路': notionRichTextProp(info.oupei_iw_panlu),
+    '欧赔百家盘路': notionRichTextProp(info.oupei_baijia_panlu),
+    '澳门亚盘盘路': notionRichTextProp(info.macau_panlu),
+    '让球指数盘路': notionRichTextProp(info.rq_panlu),
     '步25_庄家盈亏': notionRichTextProp(info.s25_zjyk),
     '步26_庄家最看好': notionRichTextProp(info.s26_zzhk),
     '步26_庄家盈亏方向': notionRichTextProp(info.s26_zjyf),
@@ -1091,7 +1232,165 @@ async function cmdAdd(dateStr, filterMatches) {
     // 同步到 26步+结论数据库
     await syncToStepsDB(reportPath);
   }
+
+  // === 同步后核查+自愈：检查Notion字段完整性，空字段查根因 ===
+  const TEXT_FIELDS_CHECK = [
+    '欧赔趋势', 'IW同赔', '澳门亚盘', '主队主场', '客队客场', '百家对比',
+    '竞彩预测', '让球预测', '风险提示',
+    '欧赔竞彩盘路', '欧赔interwetten盘路', '欧赔百家盘路',
+    '澳门亚盘盘路', '让球指数盘路',
+    '步25_庄家盈亏', '步26_庄家最看好', '步26_庄家盈亏方向', '步26_盈亏占比', '步26_投注占比',
+    '竞彩澳门亚盘'
+  ];
+  const NUM_FIELDS_CHECK = [
+    '让球指数胜', '让球指数平', '让球指数负',
+    '竞彩欧赔胜', '竞彩欧赔平', '竞彩欧赔负',
+    '百家欧赔胜', '百家欧赔平', '百家欧赔负',
+    'Interwetten胜', 'Interwetten平', 'Interwetten负'
+  ];
+
+  function findFieldSource(matchDir, field) {
+    const src = {
+      '欧赔趋势': ['group01_europe', 'step1_europe_base.txt', 'step01_europe_basic.md'],
+      '欧赔竞彩盘路': ['group01_europe', 'step1_europe_base.txt', 'step01_europe_basic.md'],
+      '欧赔interwetten盘路': ['group01_europe', 'step1_europe_base.txt', 'step01_europe_basic.md'],
+      '欧赔百家盘路': ['group01_europe', 'step1_europe_base.txt', 'step01_europe_basic.md'],
+      '竞彩欧赔胜': ['group01_europe', 'step1_europe_base.txt', 'step01_europe_basic.md'],
+      '竞彩欧赔平': ['group01_europe', 'step1_europe_base.txt', 'step01_europe_basic.md'],
+      '竞彩欧赔负': ['group01_europe', 'step1_europe_base.txt', 'step01_europe_basic.md'],
+      '百家欧赔胜': ['group01_europe', 'step1_europe_base.txt', 'step01_europe_basic.md'],
+      '百家欧赔平': ['group01_europe', 'step1_europe_base.txt', 'step01_europe_basic.md'],
+      '百家欧赔负': ['group01_europe', 'step1_europe_base.txt', 'step01_europe_basic.md'],
+      'Interwetten胜': ['group01_europe', 'step1_europe_base.txt', 'step01_europe_basic.md'],
+      'Interwetten平': ['group01_europe', 'step1_europe_base.txt', 'step01_europe_basic.md'],
+      'Interwetten负': ['group01_europe', 'step1_europe_base.txt', 'step01_europe_basic.md'],
+      'IW同赔': ['group01_europe', 'step3_interwetten_same.txt', 'step03_interwetten_same.md'],
+      '让球指数盘路': ['group02_handicap', 'step4_handicap_base.txt', 'step04_handicap_basic.md'],
+      '让球指数胜': ['group02_handicap', 'step4_handicap_base.txt', 'step04_handicap_basic.md'],
+      '让球指数平': ['group02_handicap', 'step4_handicap_base.txt', 'step04_handicap_basic.md'],
+      '让球指数负': ['group02_handicap', 'step4_handicap_base.txt', 'step04_handicap_basic.md'],
+      '澳门亚盘盘路': ['group03_asian', 'step6_asian_base.txt', 'step06_asian_basic.md'],
+      '澳门亚盘': ['group03_asian', 'step6_asian_base.txt', 'step06_asian_basic.md'],
+      '竞彩澳门亚盘': ['group03_asian', 'step6_asian_base.txt', 'step06_asian_basic.md'],
+      '步25_庄家盈亏': ['.', 'step25_zhuangjia.json'],
+      '步26_庄家最看好': ['.', 'step26_profit_ratio.json'],
+      '步26_庄家盈亏方向': ['.', 'step26_profit_ratio.json'],
+      '步26_盈亏占比': ['.', 'step26_profit_ratio.json'],
+      '步26_投注占比': ['.', 'step26_profit_ratio.json'],
+      '主队主场': ['group04_teamA', 'step9_home_history.txt', 'step09_13_teamA.md'],
+      '客队客场': ['group05_teamB', 'step14_away_history.txt', 'step14_18_teamB.md'],
+      '百家对比': ['group06_baijia', 'step19_baijia_compare.txt', 'step19_23_baijia.md'],
+    };
+    const spec = src[field];
+    if (!spec) return null;
+    const grp = spec[0] === '.' ? matchDir : path.join(matchDir, spec[0]);
+    for (let i = 1; i < spec.length; i++) {
+      const fp = path.join(grp, spec[i]);
+      if (fs.existsSync(fp)) return fp;
+    }
+    return null;
+  }
+
+  try {
+    const vres = await notionRequest('POST', '/v1/databases/' + DATABASE_ID + '/query', {
+      filter: { property: '比赛日期', date: { equals: dateStr } },
+      page_size: 20
+    });
+    if (vres.status === 200) {
+      const vpages = vres.data.results;
+      let totalEmpty = 0;
+      
+      for (const vpage of vpages) {
+        const vname = vpage.properties['Name']?.title?.[0]?.plain_text || '未知';
+        let vemptyFields = [];
+        const numM = vname.match(/[周][一二三四五六日](\d{3})/);
+        const matchNum = numM ? numM[1] : '';
+
+        for (const field of TEXT_FIELDS_CHECK) {
+          const prop = vpage.properties[field];
+          let val = '';
+          if (prop?.rich_text?.length > 0) val = prop.rich_text.map(r => r.plain_text).join('').trim();
+          if (!val) vemptyFields.push(field);
+        }
+        for (const field of NUM_FIELDS_CHECK) {
+          const val = vpage.properties[field]?.number;
+          if (val === null || val === undefined) vemptyFields.push(field);
+        }
+
+        if (vemptyFields.length > 0) {
+          console.log('\u274c ' + vname + ': ' + vemptyFields.length + ' \u4e2a\u7a7a\u5b57\u6bb5');
+          console.log('   ' + vemptyFields.join(', '));
+
+          // 查根因
+          let fieldRootCauses = {};
+          for (const field of vemptyFields) {
+            let matchDir = null;
+            if (matchNum) {
+              const dataDir2 = path.join(TASKS_DIR, dateStr, 'data');
+              if (fs.existsSync(dataDir2)) {
+                const dirs = fs.readdirSync(dataDir2).filter(d => d.startsWith('match'));
+                for (const d of dirs) {
+                  const metaP = path.join(dataDir2, d, 'meta.json');
+                  if (fs.existsSync(metaP)) {
+                    try {
+                      const meta = JSON.parse(fs.readFileSync(metaP, 'utf8'));
+                      const mn = meta.matchnum || '';
+                      if (mn.includes(matchNum)) {
+                        matchDir = path.join(dataDir2, d);
+                        break;
+                      }
+                    } catch(e) {}
+                  }
+                }
+              }
+            }
+            if (!matchDir) {
+              fieldRootCauses[field] = '无match目录(' + (matchNum || '?') + ')';
+              continue;
+            }
+            const srcFile = findFieldSource(matchDir, field);
+            if (!srcFile) {
+              fieldRootCauses[field] = '无源文件映射';
+              continue;
+            }
+            if (!fs.existsSync(srcFile)) {
+              fieldRootCauses[field] = '源文件不存在: ' + path.basename(srcFile);
+              continue;
+            }
+            const st = fs.statSync(srcFile);
+            if (st.size < 20) {
+              fieldRootCauses[field] = '源文件过小(' + st.size + 'B): ' + path.basename(srcFile);
+              continue;
+            }
+            fieldRootCauses[field] = '提取逻辑未命中: ' + path.basename(srcFile) + ' 存在(' + st.size + 'B)';
+          }
+
+          const logged = {};
+          for (const [f, c] of Object.entries(fieldRootCauses)) {
+            if (!logged[c]) logged[c] = [];
+            logged[c].push(f);
+          }
+          for (const [cause, fields] of Object.entries(logged)) {
+            console.log('   \uD83D\uDD0D ' + fields.join(', ') + ' -> ' + cause);
+          }
+          totalEmpty += vemptyFields.length;
+        } else {
+          console.log('\u2705 ' + vname + ': \u5168\u90e8\u5b57\u6bb5\u6709\u6570\u636e');
+        }
+      }
+      if (totalEmpty > 0) {
+        console.log('\n\u26a0\ufe0f  FLAG: \u5171\u8ba1 ' + totalEmpty + ' \u4e2a\u7a7a\u5b57\u6bb5\uff0c\u6839\u56e0\u5df2\u6807\u6ce8');
+      } else {
+        console.log('\n\u2705 \u6240\u6709\u5b57\u6bb5\u540c\u6b65\u5b8c\u6574');
+      }
+    } else {
+      console.log('[WARN] \u540c\u6b65\u540e\u6838\u67e5\u67e5\u8be2\u5931\u8d25: ' + vres.status);
+    }
+  } catch(e) {
+    console.log('[WARN] \u540c\u6b65\u540e\u6838\u67e5\u5f02\u5e38: ' + e.message);
+  }
 }
+
 
 async function cmdUpdateFeedback(dateStr) {
   const resultsPath = path.join(JINGCAI_DIR, `results_${dateStr}.json`);
@@ -1213,5 +1512,4 @@ async function main() {
     process.exit(1);
   }
 }
-
 main();

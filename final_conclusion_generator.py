@@ -689,6 +689,7 @@ rq_total = 0
 rq_wins = 0
 rq_draws = 0
 rq_losses = 0
+s5_text = ''
 
 # 读取step5让球同赔数据
 G2_step5 = os.path.join(G2, 'step5_handicap_same.txt')
@@ -697,33 +698,58 @@ if not os.path.exists(G2_step5):
 if os.path.exists(G2_step5):
     with open(G2_step5, 'r', encoding='utf-8', errors='replace') as f:
         s5_text = f.read()
-    rq_match = re.search(r'胜(\d+)\s+平(\d+)\s+负(\d+)', s5_text)
-    if rq_match:
-        rq_wins = int(rq_match.group(1))
-        rq_draws = int(rq_match.group(2))
-        rq_losses = int(rq_match.group(3))
+    rq_matches = re.findall(r'胜(\d+)\s+平(\d+)\s+负(\d+)', s5_text)
+    if len(rq_matches) >= 2:
+        # 同联赛（高权重3x） + 所有赛事（权重1x）
+        sl_w, sl_d, sl_l = int(rq_matches[0][0]), int(rq_matches[0][1]), int(rq_matches[0][2])
+        al_w, al_d, al_l = int(rq_matches[1][0]), int(rq_matches[1][1]), int(rq_matches[1][2])
+        W = 3  # 同联赛权重
+        rq_wins = sl_w * W + al_w
+        rq_draws = sl_d * W + al_d
+        rq_losses = sl_l * W + al_l
         rq_total = rq_wins + rq_draws + rq_losses
+    else:
+        rq_match = re.search(r'胜(\d+)\s+平(\d+)\s+负(\d+)', s5_text)
+        if rq_match:
+            rq_wins = int(rq_match.group(1))
+            rq_draws = int(rq_match.group(2))
+            rq_losses = int(rq_match.group(3))
+            rq_total = rq_wins + rq_draws + rq_losses
 
 # 读取meta.json获取让球数
 rq_handicap = ''
 meta_path = os.path.join(MD, 'meta.json')
+rq = ''
 if os.path.exists(meta_path):
     with open(meta_path, 'r', encoding='utf-8') as f:
         meta_data = json.loads(f.read())
     rq = meta_data.get('rq', '')
-    if rq:
-        try:
-            rq_val = int(float(rq))
-            # meta.json中rq>0表示主队受让，rq<0表示主队让球
-            if rq_val > 0:
-                rq_handicap = '受让{}球 '.format(rq_val)
-            elif rq_val < 0:
-                rq_handicap = '让{}球 '.format(abs(rq_val))
-            else:
-                rq_handicap = '平手 '
-        except:
-
-            log.warn(f"[final_concl] 解析异常")
+# 后备：从step5读取让球数
+if not rq and s5_text:
+    rq5_match = re.search(r'让球数[：:]\s*([+-]?\d+)', s5_text)
+    if rq5_match:
+        rq = rq5_match.group(1)
+# 后备：从step4读取让球数
+if not rq:
+    step4_file = os.path.join(G2, 'step04_handicap_basic.md')
+    if os.path.exists(step4_file):
+        with open(step4_file, 'r', encoding='utf-8', errors='replace') as f:
+            s4_text = f.read()
+        rq4_match = re.search(r'竞彩官方\s*\|\s*([+-]?\d+(?:\.\d+)?)\s*\|', s4_text)
+        if rq4_match:
+            rq = rq4_match.group(1)
+if rq:
+    try:
+        rq_val = int(float(rq))
+        # meta.json中rq>0表示主队受让，rq<0表示主队让球
+        if rq_val > 0:
+            rq_handicap = '受让{}球 '.format(rq_val)
+        elif rq_val < 0:
+            rq_handicap = '让{}球 '.format(abs(rq_val))
+        else:
+            rq_handicap = '平手 '
+    except:
+        log.warn(f"[final_concl] 解析异常")
 # ============ 让球预测独立分析（多维度比分信号） ============
 # 从同联赛、亚盘、百家、主客队历史等维度提取比分信号
 rq_score_home = 0  # 主胜信号
@@ -851,42 +877,156 @@ elif rq_direction_final == '客胜':
 else:
     rq_direction = '{}让球平'.format(rq_handicap) if rq_handicap else '让球平'
 
-# 让球预测信心度：无数据时显示"数据不足"
+# ====== 让球支持率：双层加权（联赛缓存x0.7 + 让球同赔x0.3）=======
 rq_display = rq_direction
-if rq_total == 0 and rq_confidence == 0:
-    # 无任何让球同赔数据，用综合分值推断
-    rq_confidence = 0.35 if abs(final_score) < 0.2 else 0.45
-    rq_display = '{}（数据不足，仅供参考）'.format(rq_direction)
 
-# 信心度：让球同赔数据匹配则高，不匹配则低
-if rq_total > 0:
-    rq_win_rate = rq_wins / rq_total
-    rq_draw_rate = rq_draws / rq_total
-    rq_loss_rate = rq_losses / rq_total
+# --- 第一层：从联赛缓存计算同联赛让球支持率（去重后） ---
+rq_cache_wins = rq_cache_draws = rq_cache_losses = rq_cache_total = 0
+rq_cache_note = ''
+
+if current_league and rq_handicap_num != 0:
+
+    # 读取step5同联赛FID列表（去重用）
+    s5_fids = set()
+    s5_fids_path = os.path.join(G2, 'step05_same_league_fids.json')
+    if os.path.exists(s5_fids_path):
+        try:
+            with open(s5_fids_path, 'r') as f:
+                s5_data = json.load(f)
+                s5_fids = set(s5_data.get('fids', []))
+        except:
+            pass
     
-    if rq_pred_direction == '主胜':
+    # 读取富集联赛缓存
+    cache_path = os.path.join(SCRIPT_DIR, 'data', 'league_cache', current_league + '.json')
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path, 'r', encoding='utf-8') as f:
+                cache_data = json.load(f)
+            matches_cache = cache_data.get('all_matches', [])
+            
+            # 获取今日欧赔初盘（从step1）
+            today_iw = today_id = today_il = 0
+            step1_file = os.path.join(G1, 'step1_europe_base.txt')
+            if not os.path.exists(step1_file):
+                step1_file = os.path.join(G1, 'step01_europe_basic.md')
+            if os.path.exists(step1_file):
+                with open(step1_file, 'r', encoding='utf-8', errors='replace') as f:
+                    s1_text = f.read()
+                jc_match = re.search(r'竞彩官方\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)', s1_text)
+                if jc_match:
+                    today_iw = float(jc_match.group(1))
+                    today_id = float(jc_match.group(2))
+                    today_il = float(jc_match.group(3))
+            
+            if today_iw > 0:
+                rq_hl = float(rq) if rq else 0
+                for m in matches_cache:
+                    fid = str(m.get('FIXTUREID', ''))
+                    if not fid or fid in s5_fids:
+                        continue  # 去重
+                    computed = m.get('_computed')
+                    if not computed:
+                        continue
+                    letball_res = computed.get('letball_result')
+                    if not letball_res:
+                        continue
+                    
+                    # 条件1：近似让球 |HL - 今日HL| <= 0.5
+                    hist_hl = m.get('HANDICAPLINE')
+                    try:
+                        hist_hl = float(hist_hl) if hist_hl else 0
+                    except:
+                        continue
+                    if abs(hist_hl - rq_hl) > 0.5:
+                        continue
+                    
+                    # 条件2：指数相近（历史终盘 vs 今日初盘 偏差<10% 至少2项）
+                    hist_w = m.get('WIN')
+                    hist_d = m.get('DRAW')
+                    hist_l = m.get('LOST')
+                    try:
+                        hist_w = float(hist_w) if hist_w else 0
+                        hist_d = float(hist_d) if hist_d else 0
+                        hist_l = float(hist_l) if hist_l else 0
+                    except:
+                        continue
+                    if hist_w == 0:
+                        continue
+                    close_count = 0
+                    if abs(hist_w - today_iw) / today_iw < 0.10:
+                        close_count += 1
+                    if abs(hist_d - today_id) / today_id < 0.10:
+                        close_count += 1
+                    if abs(hist_l - today_il) / today_il < 0.10:
+                        close_count += 1
+                    if close_count < 2:
+                        continue  # 不足2项相近
+                    
+                    # 统计让球结果
+                    if letball_res == '主胜':
+                        rq_cache_wins += 1
+                    elif letball_res == '平局':
+                        rq_cache_draws += 1
+                    elif letball_res == '客胜':
+                        rq_cache_losses += 1
+                
+                rq_cache_total = rq_cache_wins + rq_cache_draws + rq_cache_losses
+                if rq_cache_total > 0:
+                    log.info('[RQCACHE] {}让球: 胜{}平{}负{}(共{}场)'.format(                        current_league, rq_cache_wins, rq_cache_draws, rq_cache_losses, rq_cache_total))
+        except Exception as e:
+            log.warn('[RQCACHE] 联赛缓存读取失败: {}'.format(e))
+
+# --- 第二层：让球同赔数据（原有逻辑，已在前面计算好） ---
+# rq_total, rq_wins, rq_draws, rq_losses 已从step5提取
+
+# --- 合成最终信心度 ---
+# 权重：联赛缓存历史 0.7，让球同赔 0.3
+rq_final_wins = rq_cache_wins * 0.7 + rq_wins * 0.3
+rq_final_draws = rq_cache_draws * 0.7 + rq_draws * 0.3
+rq_final_losses = rq_cache_losses * 0.7 + rq_losses * 0.3
+rq_final_total = rq_final_wins + rq_final_draws + rq_final_losses
+
+rq_confidence = 0
+
+if rq_final_total > 0:
+    rq_win_rate = rq_final_wins / rq_final_total
+    rq_draw_rate = rq_final_draws / rq_final_total
+    rq_loss_rate = rq_final_losses / rq_final_total
+    
+    if rq_direction_final == '主胜':
         rq_confidence = rq_win_rate
-    elif rq_pred_direction == '客胜':
+    elif rq_direction_final == '客胜':
         rq_confidence = rq_loss_rate
     else:
         rq_confidence = rq_draw_rate
     
-    # 信心度极低（<15%）说明同赔数据不支持该方向，标注"信心不足"
-    if rq_confidence < 0.15:
-        rq_display = '{}（信心不足，同赔不支持）'.format(rq_direction)
+    # 注释来源
+    cache_count = rq_cache_total
+    s5_count = rq_total
+    if cache_count > 0 and s5_count > 0:
+        rq_cache_note = '(联赛{}场+同赔{}场)'.format(cache_count, s5_count)
+    elif cache_count > 0:
+        rq_cache_note = '(联赛{}场)'.format(cache_count)
+    elif s5_count > 0:
+        rq_cache_note = '(同赔{}场)'.format(s5_count)
     
-    # 如果让球同赔方向不一致（竞彩说主胜但让球同赔主胜率很低）
-    # 信心度打折扣
-    if rq_pred_direction == '主胜' and rq_loss_rate > rq_win_rate:
+    if rq_confidence < 0.15:
+        rq_display = '{}(信心不足){}'.format(rq_direction, rq_cache_note)
+    else:
+        rq_display = '{}{}'.format(rq_direction, rq_cache_note)
+    
+    # 折扣：方向不一致时降低信心
+    if rq_direction_final == '主胜' and rq_loss_rate > rq_win_rate:
         rq_confidence = min(rq_confidence, 1 - rq_loss_rate)
-    elif rq_pred_direction == '客胜' and rq_win_rate > rq_loss_rate:
+    elif rq_direction_final == '客胜' and rq_win_rate > rq_loss_rate:
         rq_confidence = min(rq_confidence, 1 - rq_win_rate)
-    elif rq_pred_direction == '平局' and rq_draw_rate < 0.35:
+    elif rq_direction_final == '平局' and rq_draw_rate < 0.35:
         rq_confidence = min(rq_confidence, rq_draw_rate + 0.2)
 else:
-    # 没有让球同赔数据，用多维度信号质量推断
-    rq_confidence = 0.45 if abs(final_score) < 0.2 else 0.55
-
+    # 没有任何数据，用综合信号推断
+    rq_confidence = 0.35 if abs(final_score) < 0.2 else 0.45
+    rq_display = '{}(数据不足，仅供参考)'.format(rq_direction)
 # 让球预测备注：如果独立分析与竞彩方向不同，标注
 rq_direction_note = ''
 if rq_independent_direction and rq_independent_direction != direction:
@@ -1034,5 +1174,79 @@ output.append('')
 output.append('---')
 output.append('')
 output.append('*提示：以上分析基于数据驱动规则引擎 + 历史模式学习，每个结论均可追溯到具体数据。投资有风险，请结合实战判断。*')
+
+# ====== Step26: 生成盈亏分析JSON（供sync_notion.js同步到Notion）=======
+step26_path = os.path.join(MD, 'step26_profit_ratio.json')
+try:
+    s25_file = os.path.join(MD, 'step25_zhuangjia.json')
+    if os.path.exists(s25_file):
+        with open(s25_file, 'r', encoding='utf-8') as f:
+            s25_data = json.loads(f.read())
+        data = s25_data.get('data', {})
+        
+        # 计算盈亏占比和投注占比
+        total_bet = sum(float(d.get('bet_pct', 0)) for d in data.values() if isinstance(d, dict))
+        total_vol = sum(float(d.get('volume', '0').replace(',', '')) for d in data.values() if isinstance(d, dict))
+        
+        win_data = data.get('主胜', {})
+        draw_data = data.get('平局', {})
+        loss_data = data.get('客胜', {})
+        
+        # 庄家最看好 = 盈利最多的方向
+        profits = {}
+        for k, d in data.items():
+            if isinstance(d, dict):
+                p = d.get('profit', 0)
+                if isinstance(p, str):
+                    try: p = int(p.replace(',', ''))
+                    except: p = 0
+                profits[k] = p
+        
+        if profits:
+            best_dir = max(profits, key=profits.get)
+        else:
+            best_dir = ''
+        
+        win_pct = float(win_data.get('bet_pct', 0)) / total_bet if total_bet > 0 else 0
+        draw_pct = float(draw_data.get('bet_pct', 0)) / total_bet if total_bet > 0 else 0
+        loss_pct = float(loss_data.get('bet_pct', 0)) / total_bet if total_bet > 0 else 0
+        
+        win_vol = float(win_data.get('volume', '0').replace(',', '')) if win_data.get('volume') else 0
+        draw_vol = float(draw_data.get('volume', '0').replace(',', '')) if draw_data.get('volume') else 0
+        loss_vol = float(loss_data.get('volume', '0').replace(',', '')) if loss_data.get('volume') else 0
+        
+        win_vol_pct = win_vol / total_vol * 100 if total_vol > 0 else 0
+        draw_vol_pct = draw_vol / total_vol * 100 if total_vol > 0 else 0
+        loss_vol_pct = loss_vol / total_vol * 100 if total_vol > 0 else 0
+        
+        step26 = {
+            'match_num': s25_data.get('match_num', ''),
+            'fid': s25_data.get('fid', ''),
+            'analysis': {
+                '庄家最看好': best_dir,
+                '庄家胜盈亏': str(win_data.get('profit', '')),
+                '庄家平盈亏': str(draw_data.get('profit', '')),
+                '庄家负盈亏': str(loss_data.get('profit', '')),
+                '盈亏占比': {
+                    '胜': round(win_pct, 3),
+                    '平': round(draw_pct, 3),
+                    '负': round(loss_pct, 3)
+                },
+                '投注占比': {
+                    '胜': '{:.0f}%'.format(win_vol_pct),
+                    '平': '{:.0f}%'.format(draw_vol_pct),
+                    '负': '{:.0f}%'.format(loss_vol_pct)
+                }
+            },
+            'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M')
+        }
+        
+        with open(step26_path, 'w', encoding='utf-8') as f:
+            json.dump(step26, f, ensure_ascii=False, indent=2)
+        log.info('[FINAL] Step26 已保存: {}'.format(step26_path))
+    else:
+        log.info('[FINAL] 未找到step25数据，跳过step26生成')
+except Exception as e:
+    log.warn('[FINAL] Step26生成失败: {}'.format(e))
 
 log.info('\n'.join(output))

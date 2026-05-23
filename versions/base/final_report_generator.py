@@ -216,7 +216,7 @@ if os.path.exists(conclusion_script):
     try:
         result = subprocess.run(
             [sys.executable, conclusion_script, MD],
-            capture_output=True, timeout=30,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
             env={**os.environ, 'PYTHONIOENCODING': 'utf-8'},
         )
         stdout_text = result.stdout.decode('utf-8', errors='replace').strip()

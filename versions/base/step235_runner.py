@@ -207,6 +207,7 @@ def write_step(title, bench_odds, data, fetch_func, is_rangqiu=False, out=sys.st
             'hist_init': hist_init, 'hist_live': hist_live,
             'hist_dir': hist_dir, 'match_level': ml,
             'is_same_league': is_same,
+            'fid': fid,
         })
     
     same_league = [x for x in parsed if x['is_same_league']]
@@ -301,4 +302,10 @@ if rq_jc:
         data5 = fetch_same_odds(1, '%.2f' % rq_jc['init_w'], '%.2f' % rq_jc['init_d'], '%.2f' % rq_jc['init_l'], FID,
             is_rangqiu=True, handicap=rq_jc['handicap'])
         write_step('竞彩让球 相同赔率', bench_rq, data5, fetch_rangqiu_odds, is_rangqiu=True, out=f)
+    # 保存step5同联赛匹配FID列表（供让球支持率去重用）
+    if data5:
+        s5_fids = [r[4] for r in data5.get('row', []) if r and str(r[0]) == LEAGUE]
+        s5_fids_path = os.path.join(os.path.dirname(STEP5_OUT), 'step05_same_league_fids.json')
+        with open(s5_fids_path, 'w', encoding='utf-8') as ff:
+            json.dump({'fids': s5_fids, 'count': len(s5_fids), 'total': data5.get('counts', [0,0,0])}, ff, ensure_ascii=False)
     print('[OK] Step 5: %s' % STEP5_OUT)

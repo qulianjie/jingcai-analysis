@@ -8,11 +8,10 @@
     python run_pipeline.py all                # 分析今日所有场次(包括已开赛)
 """
 import os, sys, json, re, time, subprocess, shutil
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from _log_util import setup_logger
+_logger = None
 LOG_DIR = None
-if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]):
-    LOG_DIR = os.path.join(os.path.dirname(os.path.normpath(sys.argv[1])), 'logs')
-log = setup_logger('pipeline', LOG_DIR)
 
 from datetime import datetime
 
@@ -26,9 +25,12 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 TASKS_DIR = os.path.join(SCRIPT_DIR, 'tasks')
 
 def log(tag, msg):
+    global _logger
+    if _logger is None:
+        _logger = setup_logger('pipeline', LOG_DIR)
     t = datetime.now().strftime('%H:%M:%S')
     msg = str(msg).encode('utf-8', errors='replace').decode('utf-8', errors='replace')
-    log.info('[{}] [{}] {}'.format(t, tag, msg))
+    _logger.info('[{}] [{}] {}'.format(t, tag, msg))
     sys.stdout.flush()
 
 def run_script(script_name, args, timeout=3600):
@@ -163,7 +165,7 @@ def organize_data(date_str):
     if moved > 0:
         log('ORGANIZE', '已移动 {} 个目录到 data/'.format(moved))
 
-def run_match_pipeline(match, date_str, match_num):
+def run_match_pipeline(match, date_str, match_num, league_cache_dir=None):
     """单场比赛的24步流水线"""
     home = match.get('home', '')
     away = match.get('away', '')
@@ -197,10 +199,10 @@ def run_match_pipeline(match, date_str, match_num):
         ('step146_extractor.py', [match_dir]),
         ('step235_runner.py', [match_dir]),
         ('step7_runner.py', [match_dir]),
-        ('step8_1923_extractor.py', [match_dir]),
+        ('step8_1923_extractor.py', [match_dir, '--cache', league_cache_dir]) if league_cache_dir else ('step8_1923_extractor.py', [match_dir]),
         ('step918_extractor.py', [match_dir]),
         ('step24_extractor.py', [match_dir]),
-        # step25/step26 是批次脚本（step25 已合并 step26），在 REGEN 阶段统一运行，不在这里
+        ('step25_zhuangjia.py', ['--match-dir', match_dir]),
     ]
     
     # 杯赛step8需要迭代收集大量球队，加大超时
@@ -273,7 +275,8 @@ def verify_match_data(match_dir, home='', away=''):
         ('group04_teamA/step9_home_history.txt', '主队历史'),
         ('group05_teamB/step14_away_history.txt', '客队历史'),
         ('group06_baijia/step19_baijia_compare.txt', '百家对比'),
-        ('step25_zhuangjia.json', '庄家盈亏(含盈亏占比)'),
+        ('step25_zhuangjia.json', '庄家盈亏'),
+        ('step26_profit_ratio.json', '盈亏占比'),
     ]
     
     # 各步骤空模板阈值（实际测量值+100B余量）
@@ -484,18 +487,33 @@ def main():
             matches = [m for m in matches if filter_match in m.get('matchnum', '')]
             log('FILTER', '过滤后剩余{}场'.format(len(matches)))
         
+        # ============ 预缓存阶段：按联赛分组提前爬取共享历史数据 ============
+        cache_dir = os.path.join(TASKS_DIR, date_str, 'data', 'league_cache')
+        log('PRECACHE', '开始预缓存联赛历史数据 → {}'.format(cache_dir))
+        run_script('precache_leagues.py', [date_str], timeout=3600)
+        log('PRECACHE', '预缓存完成')
+
         success_count = 0
-        for i, match in enumerate(matches):
-            match_num = match.get('matchnum', '{:03d}'.format(i+1))
-            log('MATCH', '({}/{}) {} {} vs {}'.format(i+1, len(matches), match_num, match.get('home',''), match.get('away','')))
+        match_results = []
+        
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            future_map = {}
+            for i, match in enumerate(matches):
+                match_num = match.get('matchnum', '{:03d}'.format(i+1))
+                log('MATCH', '({}/{}) {} {} vs {} (提交并发)'.format(i+1, len(matches), match_num, match.get('home',''), match.get('away','')))
+                fut = executor.submit(run_match_pipeline, match, date_str, i+1, cache_dir)
+                future_map[fut] = match_num
             
-            if run_match_pipeline(match, date_str, i+1):
-                success_count += 1
-                log('OK', '{} 完成'.format(match_num))
-            else:
-                log('FAIL', '{} 失败'.format(match_num))
-            
-            time.sleep(3)
+            for fut in as_completed(future_map):
+                mn = future_map[fut]
+                try:
+                    if fut.result():
+                        success_count += 1
+                        log('OK', '{} 完成'.format(mn))
+                    else:
+                        log('FAIL', '{} 失败'.format(mn))
+                except Exception as e:
+                    log('ERROR', '{} 异常: {}'.format(mn, e))
         
         log('STEP25', '庄家盈亏分析(25) - 全量处理')
         run_script('step25_zhuangjia.py', [date_str], timeout=3600)

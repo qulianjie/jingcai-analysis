@@ -391,7 +391,7 @@ bench_av_dir = dir_str3(*cur_av) if cur_av else ''
 bench_rq_dir = dir_str3(*cur_rq) if cur_rq else ''
 
 # ============ 获取整个联赛所有比赛 ============
-log.info()
+print()
 log.info('获取整个联赛比赛...')
 
 # 获取联赛名称和球队列表
@@ -460,7 +460,7 @@ for i, team_id in enumerate(team_ids, 1):
 log.info('  同联赛: {} 场 (去重后)'.format(len(all_matches)))
 
 # ============ 获取每场比赛的欧赔+让球数据 ============
-log.info()
+print()
 log.info('获取欧赔+让球数据...')
 
 match_data = []
@@ -558,7 +558,7 @@ for i, m in enumerate(all_matches, 1):
 log.info('  有效数据: {} 场'.format(len(match_data)))
 
 # ============ 盘路完全匹配分析 ============
-log.info()
+print()
 log.info('盘路完全匹配分析...')
 log.info('  竞彩欧赔基准: {}'.format(bench_jc_dir))
 log.info('  IWC基准: {}'.format(bench_iw_dir))
@@ -728,7 +728,7 @@ if 'MATCH_DIR' in dir():
     with open(CACHE_PATH, 'w', encoding='utf-8') as f:
         json.dump(fid_cache, f, ensure_ascii=False, indent=2)
 
-log.info()
+print()
 log.info('='*60)
 log.info('完成！')
 log.info('输出: ' + OUTPUT_PATH)

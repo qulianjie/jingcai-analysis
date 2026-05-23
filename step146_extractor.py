@@ -69,7 +69,7 @@ for table in soup_ouzhi.find_all('table'):
         for idx in [3, 4, 5, 6, 7, 8]:
             val = tds[idx].get_text().strip().replace(chr(160), '')
             try: nums.append(float(val))
-            except: log.warn(f'[欧赔] 数值转换失败: {val}')
+            except: print(f'[欧赔] 数值转换失败: {val}', file=sys.stderr)
         if len(nums) >= 6:
             if td0.isdigit():
                 all_companies.append({'row_num': int(td0), 'name': td1,
@@ -250,7 +250,7 @@ for table in soup_rq.find_all('table'):
             for idx in [4, 5, 6, 7, 8, 9]:
                 val = tds[idx].get_text().strip().replace(chr(160), '')
                 try: nums.append(float(val))
-                except: log.warn(f'[亚盘] 数值转换失败: {val}')
+                except: print(f'[亚盘] 数值转换失败: {val}', file=sys.stderr)
             if len(nums) >= 6:
                 rq_jc = {'handicap': td2, 'iw': nums[0], 'id': nums[1], 'il': nums[2],
                     'lw': nums[3], 'ld': nums[4], 'll': nums[5]}
@@ -291,23 +291,29 @@ for table in soup_yz.find_all('table'):
         td0 = tds[0].get_text().strip()
         if td0.isdigit() and int(td0) in target_rows_yz:
             name = tds[1].get_text().strip()
-            iiw = il_text = iil = liw = ll_text = lil = ''
+            iiw = iil = liw = lil = ''
+            ll_text = ''  # 初盘盘口 (ll = live line? 实为变量名约定, 表格格式用ll_text/liw/lil当初盘组)
+            il_text = ''  # 即时盘盘口 (il = "immediate line"? 表格格式用il_text/iiw/iil当即时盘组)
             for idx in range(len(tds)):
                 val = tds[idx].get_text().strip().replace(chr(160), '')
                 if idx == 4:
+                    # td[4] = 初盘盘口文字
+                    ll_text = re.sub(r'[\u2b06\u2b07\u27a1\u2191\u2193\u2194⬆⬇➡]', '', val).strip()
+                elif idx == 3:
                     m = re.search(r'([\d\.]+)', val)
-                    if m: iiw = m.group(1)
-                elif idx == 3: il_text = val
+                    if m: liw = m.group(1)  # 初盘主水（配合表格格式，liw用在初盘组）
                 elif idx == 5:
                     m = re.search(r'([\d\.]+)', val)
-                    if m: iil = m.group(1)
-                elif idx == 7:
+                    if m: lil = m.group(1)  # 初盘客水
+                elif idx == 10:
+                    # td[10] = 即时盘盘口文字
+                    il_text = re.sub(r'[\u2b06\u2b07\u27a1\u2191\u2193\u2194⬆⬇➡]', '', val).strip()
+                elif idx == 9:
                     m = re.search(r'([\d\.]+)', val)
-                    if m: liw = m.group(1)
-                elif idx == 6: ll_text = val
-                elif idx == 8:
+                    if m: iiw = m.group(1)  # 即时盘主水（配合表格格式，iiw用在即时盘组）
+                elif idx == 11:
                     m = re.search(r'([\d\.]+)', val)
-                    if m: lil = m.group(1)
+                    if m: iil = m.group(1)  # 即时盘客水
             yz_data.append({'row_num': int(td0), 'name': name,
                 'il_text': il_text, 'liw': liw, 'lil': lil,
                 'iiw': iiw, 'iil': iil, 'll_text': ll_text})
@@ -327,7 +333,7 @@ lines6.append('|------|------|--------|')
 
 for d in yz_data:
     cn = company_map.get(d['row_num'], d['name'])
-    lines6.append('| {} | {} {}|{} | {} {}|{} |'.format(
+    lines6.append('| {} | {}（主水{}|客水{}） | {}（主水{}|客水{}） |'.format(
         cn, d['ll_text'], d['liw'], d['lil'], d['il_text'], d['iiw'], d['iil']))
 
 lines6.append('')

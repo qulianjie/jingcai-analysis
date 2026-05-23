@@ -330,4 +330,10 @@ if rq_jc:
         data5 = fetch_same_odds(1, '%.2f' % rq_jc['init_w'], '%.2f' % rq_jc['init_d'], '%.2f' % rq_jc['init_l'], FID,
             is_rangqiu=True, handicap=rq_jc['handicap'])
         write_step('竞彩让球 相同赔率', bench_rq, data5, fetch_rangqiu_odds, is_rangqiu=True, out=f)
+        # 写出同赔FID列表（用于联赛缓存去重）
+        if data5 and data5.get('row'):
+            s5_fids = [str(row[4]) for row in data5['row'] if len(row) > 4]
+            s5_fids_path = os.path.join(os.path.dirname(STEP5_OUT), 'step05_same_league_fids.json')
+            with open(s5_fids_path, 'w', encoding='utf-8') as ff:
+                json.dump({'fids': s5_fids, 'total': len(s5_fids)}, ff, ensure_ascii=False)
     log.info('Step 5: %s' % os.path.basename(STEP5_OUT))
