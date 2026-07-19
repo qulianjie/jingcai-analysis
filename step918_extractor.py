@@ -40,10 +40,11 @@ else:
     STEP14_OUT = sys.argv[8] if len(sys.argv) > 8 else None
 
 import requests, re, time, json
+from _http_cache import CachedSession
 from bs4 import BeautifulSoup
 from datetime import datetime
 
-sess = requests.Session()
+sess = CachedSession()
 sess.headers.update({
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',

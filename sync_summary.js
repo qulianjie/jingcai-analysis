@@ -7,6 +7,7 @@
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const nv = require('./_notion_verify.js');
 
 const API_KEY = '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';
 const MATCH_DB = '35491ad7-17ba-81cc-aa04-ce53f7234e17';   // 竞彩比赛追踪（数据源）
@@ -274,6 +275,18 @@ async function main() {
   await writeSummary(groups);
 
   console.log('\n✅ 同步完成');
+
+  // === 上传后核查：读回汇总库检查是否有数据 ===
+  try {
+    const res = await nv.verifyAfterUpload('', SUMMARY_DB, API_KEY, null);
+    if (res.checked > 0) {
+      console.log('✅ 汇总库数据完整: ' + res.checked + '行');
+    } else {
+      console.log('⚠️ 汇总库可能为空，请检查');
+    }
+  } catch(e) {
+    console.log('[WARN] 汇总库核查异常: ' + e.message);
+  }
 }
 
 main().catch(err => {

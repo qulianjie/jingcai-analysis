@@ -21,6 +21,76 @@ if hasattr(sys.stdout, 'buffer'):
 if hasattr(sys.stderr, 'buffer'):
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
+# ============ Macau Line 提取（从 500.com 亚盘页） ============
+def _fetch_macau_line(fid):
+    """从500.com亚盘页提取澳门盘口，返回盘口名或空字符串"""
+    if not fid:
+        return ''
+    import requests
+    sess = requests.Session()
+    sess.headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'})
+    try:
+        r = sess.get('https://odds.500.com/fenxi/yazhi-%s.shtml' % fid, timeout=15)
+        r.encoding = 'gbk'
+        raw = r.text.encode('gbk', errors='replace')
+        m = re.search(rb'cid=5.*?quancheng.*?</span>.*?pl_table_data[^>]*>.*?<tr[^>]*>.*?<td[^>]*>[^<]*</td>\s*<td[^>]*>([^<]+)</td>\s*<td[^>]*>[^<]*</td>', raw, re.DOTALL)
+        if m:
+            cp = m.group(1).decode('gbk', errors='replace').strip()
+            cp = re.sub(r'<[^>]+>', '', cp)
+            return cp
+    except:
+        pass
+    return ''
+
+
+# ============ 缓存清除 + 球队ID提取（Loop Engineering 工具函数）============
+def _clear_step_cache(fid, url_patterns):
+    """按URL模式清除HTTP缓存（如缓存污染导致空数据时调用）"""
+    if not fid or not url_patterns:
+        return
+    import hashlib, os
+    cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'http_cache')
+    if not os.path.isdir(cache_dir):
+        return
+    for fname in os.listdir(cache_dir):
+        if not fname.endswith('.meta.json'):
+            continue
+        meta_path = os.path.join(cache_dir, fname)
+        try:
+            with open(meta_path, 'r') as f:
+                meta = json.load(f)
+            cached_url = meta.get('url', '')
+            if any(p in cached_url for p in url_patterns):
+                base = fname.replace('.meta.json', '')
+                for ext in ['.html', '.meta.json']:
+                    p = os.path.join(cache_dir, base + ext)
+                    if os.path.exists(p):
+                        os.remove(p)
+        except:
+            pass
+
+
+def _fetch_team_id(fid, side='home'):
+    """从500.com欧赔页提取主队/客队ID"""
+    if not fid:
+        return ''
+    import requests, re
+    sess = requests.Session()
+    sess.headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'})
+    try:
+        r = sess.get('https://odds.500.com/fenxi/ouzhi-%s.shtml' % fid, timeout=15)
+        r.encoding = 'gbk'
+        if side == 'home':
+            m = re.search(r'href="https://liansai\.500\.com/team/(\d+)/teamfixture/"[^>]*>主', r.text)
+        else:
+            m = re.search(r'href="https://liansai\.500\.com/team/(\d+)/teamfixture/"[^>]*>客', r.text)
+        if m:
+            return m.group(1)
+    except:
+        pass
+    return ''
+
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 TASKS_DIR = os.path.join(SCRIPT_DIR, 'tasks')
 
@@ -40,7 +110,7 @@ def run_script(script_name, args, timeout=3600):
         return False
     cmd = [sys.executable, script_path] + args
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, encoding='utf-8', errors='replace')
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout, encoding='utf-8', errors='replace')
         if result.returncode != 0:
             log('ERROR', '{} 返回码: {}'.format(script_name, result.returncode))
             if result.stderr:
@@ -62,17 +132,18 @@ def _acquire_lock(name):
     try:
         result = subprocess.run(
             [sys.executable, os.path.join(SCRIPT_DIR, 'protect.py'), 'lock', name],
-            capture_output=True, text=True, timeout=30
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30
         )
         return result.returncode == 0
-    except:
+    except Exception as e:
+        print('  [LOCK] _acquire_lock error: %s' % e)
         return False
 
 def _release_lock(name):
     try:
         subprocess.run(
             [sys.executable, os.path.join(SCRIPT_DIR, 'protect.py'), 'unlock', name],
-            capture_output=True, text=True, timeout=10
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10
         )
     except:
         pass
@@ -194,6 +265,18 @@ def run_match_pipeline(match, date_str, match_num, league_cache_dir=None):
     with open(meta_path, 'w', encoding='utf-8') as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
     
+    # 自动补全 macau_line（如缺失则从500.com亚盘页提取）
+    if not meta.get('macau_line'):
+        log('MACAU', '自动提取澳门盘口(fid=%s)...' % meta.get('fid', ''))
+        macau_line = _fetch_macau_line(meta.get('fid', ''))
+        if macau_line:
+            meta['macau_line'] = macau_line
+            with open(meta_path, 'w', encoding='utf-8') as f:
+                json.dump(meta, f, ensure_ascii=False, indent=2)
+            log('MACAU', '澳门盘口: %s' % macau_line)
+        else:
+            log('MACAU', '⚠️ 未提取到澳门盘口')
+    
     # 直接调用各步骤脚本（所有脚本都支持 match_dir 模式，从 meta.json 读参数）
     steps = [
         ('step146_extractor.py', [match_dir]),
@@ -217,11 +300,107 @@ def run_match_pipeline(match, date_str, match_num, league_cache_dir=None):
             return False
         time.sleep(2)
     
-    # ============ 数据质量核查（第一次：只记录，不修正）============
+    # ============ 数据质量核查 + Loop Engineering（自动修复）============
     passed, issues = verify_match_data(match_dir, home, away)
     _save_verify_result(match_dir, home, away, passed, issues)
     if issues:
-        log('CHECK', '🔍 {} vs {} 发现{}项（已记录，不修正）'.format(home, away, len(issues)))
+        log('CHECK', '🔍 {} vs {} 发现{}项'.format(home, away, len(issues)))
+        # ---- Loop Engineering: 遍历所有步骤，逐项修复 ----
+        
+        # 步骤文件 → 对应脚本 + 需清除的缓存URL模式
+        STEP_ISSUE_MAP = {
+            '欧赔基础':    ('step146_extractor.py', ['fenxi/ouzhi']),
+            '让球基础':    ('step146_extractor.py', ['fenxi/rangqiu']),
+            '亚盘基础':    ('step146_extractor.py', ['fenxi/yazhi']),
+            '竞彩同赔':    ('step235_runner.py',   ['ouzhi_sameajax', 'rangqiu_sameajax']),
+            'Interwetten同赔': ('step235_runner.py', ['ouzhi_sameajax', 'rangqiu_sameajax']),
+            '让球同赔':    ('step235_runner.py',   ['ouzhi_sameajax', 'rangqiu_sameajax']),
+            '澳门同赔':    ('step7_runner.py',     []),
+            '同联赛亚盘':  ('step8_1923_extractor.py', []),
+            '主队历史':    ('step918_extractor.py', ['liansai.500.com/team']),
+            '客队历史':    ('step918_extractor.py', ['liansai.500.com/team']),
+            '百家对比':    ('step918_extractor.py', ['fenxi1']),
+            '盘路匹配':    ('step24_extractor.py',  ['fenxi1']),
+            '庄家盈亏':    ('step25_zhuangjia.py',  []),
+            '盈亏占比':    ('step25_zhuangjia.py',  []),
+            'step25_zhuangjia.json': ('step25_zhuangjia.py',  []),
+            'step26_profit_ratio.json': ('step25_zhuangjia.py',  []),
+        }
+        
+        retry_scripts = []
+        fixed_any = False
+        
+        # 修复1: macau_line为空（特殊处理，需写meta.json）
+        for issue in issues:
+            if 'macau_line为空' in issue:
+                ml = _fetch_macau_line(meta.get('fid', ''))
+                if ml:
+                    meta['macau_line'] = ml
+                    with open(meta_path, 'w', encoding='utf-8') as f:
+                        json.dump(meta, f, ensure_ascii=False, indent=2)
+                    log('FIX', '✅ macau_line已补: {}'.format(ml))
+                    fixed_any = True
+                    for s in ['step7_runner.py']:
+                        if s not in retry_scripts: retry_scripts.append(s)
+                    for s in ['step8_1923_extractor.py']:
+                        if s not in retry_scripts: retry_scripts.append(s)
+
+        # 修复2: home_id/away_id为空 → 从胜负彩页面提取
+        for issue in issues:
+            if 'home_id为空' in issue:
+                hid = _fetch_team_id(meta.get('fid', ''), 'home')
+                if hid:
+                    meta['home_id'] = hid
+                    fixed_any = True
+            if 'away_id为空' in issue:
+                aid = _fetch_team_id(meta.get('fid', ''), 'away')
+                if aid:
+                    meta['away_id'] = aid
+                    fixed_any = True
+        if fixed_any and ('home_id' in meta or 'away_id' in meta):
+            with open(meta_path, 'w', encoding='utf-8') as f:
+                json.dump(meta, f, ensure_ascii=False, indent=2)
+            for s in ['step918_extractor.py']:
+                if s not in retry_scripts: retry_scripts.append(s)
+
+        # 修复3: 通用步骤文件空数据 → 清除对应HTTP缓存后重跑
+        for issue in issues:
+            for keyword, (script, cache_urls) in STEP_ISSUE_MAP.items():
+                if keyword in issue:
+                    if script not in retry_scripts:
+                        log('FIX', '🔄 {} 数据空，清除缓存后重跑 {}'.format(keyword, script))
+                        fixed_any = True
+                        retry_scripts.append(script)
+                        # 清除该步骤对应的HTTP缓存
+                        _clear_step_cache(meta.get('fid', ''), cache_urls)
+
+        # 执行修复后重跑
+        if retry_scripts:
+            for script_name in sorted(set(retry_scripts)):
+                script_args_map = {
+                    'step146_extractor.py':        ('step146_extractor.py', [match_dir]),
+                    'step235_runner.py':           ('step235_runner.py', [match_dir]),
+                    'step7_runner.py':             ('step7_runner.py', [match_dir]),
+                    'step8_1923_extractor.py':     ('step8_1923_extractor.py', [match_dir, '--cache', league_cache_dir]) if league_cache_dir else ('step8_1923_extractor.py', [match_dir]),
+                    'step918_extractor.py':        ('step918_extractor.py', [match_dir]),
+                    'step24_extractor.py':         ('step24_extractor.py', [match_dir]),
+                    'step25_zhuangjia.py':         ('step25_zhuangjia.py', ['--match-dir', match_dir]),
+                }
+                if script_name in script_args_map:
+                    s, a = script_args_map[script_name]
+                    log('RETRY', '重跑 {}'.format(s))
+                    run_script(s, a, timeout=3600)
+                    time.sleep(1)
+
+            # 修复后重新验证
+            passed2, issues2 = verify_match_data(match_dir, home, away)
+            _save_verify_result(match_dir, home, away, passed2, issues2)
+            if issues2:
+                for iss in issues2:
+                    log('CHECK', '🔍 修复后仍有: {}'.format(iss))
+                log('CHECK', '🔍 共{}项未修复（已持久化）'.format(len(issues2)))
+            else:
+                log('CHECK', '✅ 修复后全部通过')
     else:
         log('CHECK', '✅ {} vs {} 数据完整'.format(home, away))
     
@@ -279,13 +458,19 @@ def verify_match_data(match_dir, home='', away=''):
         ('step26_profit_ratio.json', '盈亏占比'),
     ]
     
-    # 各步骤空模板阈值（实际测量值+100B余量）
-    # step8空模板约1270B, step9空模板约1520B, step14空模板约1500B, step19空模板约1700B
+    # 各步骤空模板阈值（实测空模板大小+100B余量）
+    # step5/step7 的"无同赔数据"极小 (~300B)，属正常情况，阈值设为动态检测
     EMPTY_TEMPLATE_THRESHOLDS = {
-        'group03_asian/step8_same_league.txt': 1370,   # 空模板1270+100
-        'group04_teamA/step9_home_history.txt': 1620,   # 空模板1520+100
-        'group05_teamB/step14_away_history.txt': 1600,  # 空模板1500+100
-        'group06_baijia/step19_baijia_compare.txt': 1800, # 空模板1700+100
+        'group01_europe/step2_jingcai_same.txt': 630,       # 空模板527+103
+        'group01_europe/step3_interwetten_same.txt': 640,   # 空模板536+104
+        'group02_handicap/step5_handicap_same.txt': 420,    # 空模板315+105 (无同赔数据)
+        'group03_asian/step7_macau_same.txt': 1200,         # 澳门同赔无数据时约1100
+        'group03_asian/step8_same_league.txt': 880,         # 空模板774+106 (原1370太宽→改880)
+        'group04_teamA/step9_home_history.txt': 1700,       # 空模板1520+180
+        'group05_teamB/step14_away_history.txt': 1700,      # 空模板1500+200
+        'group06_baijia/step19_baijia_compare.txt': 1800,   # 空模板1700+100
+        'step25_zhuangjia.json': 1100,                      # 正常~1150, 空JSON <1100
+        'step26_profit_ratio.json': 1550,                   # 正常~1630, 空JSON <1550
     }
     for filepath, desc in key_files:
         full_path = os.path.join(match_dir, filepath)
@@ -377,6 +562,96 @@ def verify_match_data(match_dir, home='', away=''):
         return (True, [])
 
 
+def _auto_fix_issues(match_dir, match_name, issues, date_str):
+    """尝试自动修复可修复的问题，返回 (fixed, unfixable_issues)"""
+    import os, json, subprocess, sys
+    fixed = []
+    unfixable = []
+    
+    for issue in issues:
+        # --- 步25/26 庄家盈亏: 重新抓取500.com投注页 ---
+        if ('庄家盈亏' in issue or '盈亏占比' in issue or 'step25_zhuangjia' in issue or 'step26_profit_ratio' in issue) and ('为空' in issue or '空文件' in issue or '缺少文件' in issue):
+            log('AUTO_FIX', '[AUTO_FIX] 尝试重新抓取步25/26: %s' % match_name)
+            try:
+                meta_path = os.path.join(match_dir, 'meta.json')
+                if os.path.exists(meta_path):
+                    with open(meta_path, 'r') as f:
+                        meta = json.load(f)
+                    fid = meta.get('fid', '')
+                    if fid:
+                        runner = os.path.join(os.path.dirname(os.path.dirname(match_dir)), 'step25_zhuangjia.py')
+                        if os.path.exists(runner):
+                            py = sys.executable
+                            r = subprocess.run([py, runner, '--fid', fid, '--date', date_str],
+                                               capture_output=True, text=True, timeout=60)
+                            if r.returncode == 0:
+                                fixed.append('步25/26已自动重抓修复')
+                                log('AUTO_FIX', '[AUTO_FIX] OK 步25/26重抓成功: %s' % match_name)
+                            else:
+                                unfixable.append('步25/26重抓失败: %s' % r.stderr[:100])
+                        else:
+                            unfixable.append('步25/26重抓脚本不存在: %s' % runner)
+            except Exception as e:
+                unfixable.append('步25/26自动修复异常: %s' % str(e))
+        
+        # --- step8 同联赛亚盘0场: 检查macau_line ---
+        elif 'step8同联赛筛选0场' in issue:
+            log('AUTO_FIX', '[AUTO_FIX] 检查步8根因: %s' % match_name)
+            meta_path = os.path.join(match_dir, 'meta.json')
+            if os.path.exists(meta_path):
+                with open(meta_path, 'r') as f:
+                    meta = json.load(f)
+                macau_line = meta.get('macau_line', '')
+                if not macau_line:
+                    unfixable.append('step8同联赛0场根因: macau_line为空(无盘口数据)')
+                else:
+                    unfixable.append('step8同联赛0场: 有macau_line(%s)但联赛无同盘口数据' % macau_line)
+        
+        # --- step9/14 历史0场: 检查team_id ---
+        elif '历史筛选0场' in issue:
+            side = '主队' if '主队' in issue else '客队'
+            meta_path = os.path.join(match_dir, 'meta.json')
+            if os.path.exists(meta_path):
+                with open(meta_path, 'r') as f:
+                    meta = json.load(f)
+                key = 'home_id' if '主队' in issue else 'away_id'
+                tid = meta.get(key, '')
+                if not tid:
+                    unfixable.append('%s历史0场根因: %s为空' % (side, key))
+                else:
+                    unfixable.append('%s历史0场: %s=%s但无历史数据' % (side, key, tid))
+        
+        else:
+            # 其余问题: 0场/无同赔等属正常情况
+            unfixable.append(issue)
+    
+    return fixed, unfixable
+
+
+def _notify_quality_flag(date_str, results):
+    """显式FLAG输出到stdout"""
+    failed = [r for r in results if r.get('passed') in (False, 'unknown')]
+    if not failed:
+        return
+    
+    print()
+    print('=' * 60)
+    print('[FLAG]  DATA QUALITY FLAG: %d场数据异常' % len(failed))
+    print('=' * 60)
+    for r in failed:
+        match = r.get('match', r.get('match_dir', '未知'))
+        auto_fixed = r.get('auto_fixed', [])
+        still_broken = r.get('issues', [])
+        if auto_fixed:
+            print('  [FIXED] %s: %s' % (match, '; '.join(auto_fixed)))
+        if still_broken:
+            print('  [FAIL]  %s: %s' % (match, '; '.join(still_broken)))
+    print()
+    print('[FLAG]  详情: %s' % os.path.join(TASKS_DIR, date_str, 'data', 'verify_summary.json'))
+    print('=' * 60)
+    print()
+
+
 def _summarize_verify_results(date_str):
     """汇总当天所有比赛的核查结果，写入 data/verify_summary.json"""
     import os, json
@@ -431,6 +706,32 @@ def _summarize_verify_results(date_str):
         for r in results:
             if r['passed'] in (False, 'unknown'):
                 log('VERIFY_SUMMARY', '  ❌ {}: {}'.format(r.get('match', r['match_dir']), r.get('issues', ['无记录'])))
+    else:
+        log('VERIFY_SUMMARY', '✅ 全部通过')
+    
+    # FLAG + 自动修复: 显式输出到stdout
+    if failed_count > 0:
+        # 尝试自动修复每个失败项
+        for r in results:
+            if r['passed'] in (False, 'unknown'):
+                match_dir_full = os.path.join(data_dir, r['match_dir'])
+                fixed, unfixable = _auto_fix_issues(
+                    match_dir_full, r.get('match', r['match_dir']),
+                    r.get('issues', []), date_str)
+                if fixed:
+                    r['auto_fixed'] = fixed
+                r['issues'] = unfixable
+                # 更新verify_result.json
+                vp = os.path.join(data_dir, r['match_dir'], 'verify_result.json')
+                if os.path.exists(vp):
+                    with open(vp, 'r', encoding='utf-8') as f:
+                        vr = json.load(f)
+                    vr['issues'] = unfixable
+                    if fixed:
+                        vr['auto_fixed'] = fixed
+                    with open(vp, 'w', encoding='utf-8') as f:
+                        json.dump(vr, f, ensure_ascii=False, indent=2)
+        _notify_quality_flag(date_str, results)
 
 
 def main():
@@ -484,12 +785,21 @@ def main():
                 log('CRON_FILTER', '只保留{}开头的比赛: {} -> {}'.format(today_weekday, before, len(matches)))
         
         if filter_match and filter_match != 'all':
-            matches = [m for m in matches if filter_match in m.get('matchnum', '')]
-            log('FILTER', '过滤后剩余{}场'.format(len(matches)))
+            # 支持范围格式: 001-006 或单个: 001
+            import re as _re
+            _range_m = _re.match(r'(\d+)-(\d+)', str(filter_match))
+            if _range_m:
+                _start, _end = int(_range_m.group(1)), int(_range_m.group(2))
+                _nums = {f'{i:03d}' for i in range(_start, _end + 1)}
+                matches = [m for m in matches if any(n in m.get('matchnum', '') for n in _nums)]
+                log('FILTER', '范围过滤 {}~{}: {}场'.format(_start, _end, len(matches)))
+            else:
+                matches = [m for m in matches if filter_match in m.get('matchnum', '')]
+                log('FILTER', '过滤后剩余{}场'.format(len(matches)))
         
         # ============ 预缓存阶段：按联赛分组提前爬取共享历史数据 ============
-        cache_dir = os.path.join(TASKS_DIR, date_str, 'data', 'league_cache')
-        log('PRECACHE', '开始预缓存联赛历史数据 → {}'.format(cache_dir))
+        cache_dir = os.path.join(SCRIPT_DIR, 'data', 'league_cache')
+        log('PRECACHE', '使用全局联赛缓存 → {}'.format(cache_dir))
         run_script('precache_leagues.py', [date_str], timeout=3600)
         log('PRECACHE', '预缓存完成')
 
@@ -567,6 +877,18 @@ def main():
         log('LEARN', '触发反馈学习引擎 V2...')
         run_script('feedback_learner.py', [], timeout=3600)
         
+        # 模式挖掘：从反馈数据提取历史模式
+        log('PATTERN_MINER', '模式挖掘...')
+        run_script('pattern_miner.py', [], timeout=7200)
+        
+        # 模式匹配：将历史模式匹配到今日比赛，生成 match_patterns_report.json
+        log('PATTERN_MATCHER', '模式匹配...')
+        run_script('pattern_matcher.py', [date_str], timeout=3600)
+        
+        # 更新Notion 4字段（含备注）：将模式匹配结果写入 Notion
+        log('UPDATE_NOTION', '更新Notion 4字段（含备注）...')
+        run_script('_update_notion_4fields.py', [date_str], timeout=3600)
+        
         # 同步到 Notion
         log('NOTION', '同步到 Notion...')
         run_script('sync_notion_wrapper.py', ['add', date_str], timeout=3600)
@@ -580,7 +902,7 @@ def main():
             if node_exe:
                 cmd = [node_exe, feedback_path, '--date', date_str]
                 try:
-                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600, encoding='utf-8', errors='replace')
+                    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=3600, encoding='utf-8', errors='replace')
                     if result.returncode != 0:
                         log('ERROR', 'feedback.js 返回码: {}'.format(result.returncode))
                         if result.stderr:
@@ -602,6 +924,23 @@ def main():
         log('DONE', '全部完成: {}/{} 场成功'.format(success_count, len(matches)))
         log('REPORTS', '最终报告位置: {}/'.format(os.path.join(TASKS_DIR, date_str)))
     
+
+        # ============ 双引擎对比 ============
+        try:
+            import subprocess as subproc_mod
+            task_dir = os.path.join(TASKS_DIR, date_str)
+            for f in os.listdir(task_dir):
+                if f.endswith('.md') and f not in ['sunday_matches.md','monday_matches.md','season_schedule.md']:
+                    report_path = os.path.join(task_dir, f)
+                    subproc_mod.run([sys.executable, 'dual_append.py', report_path], 
+                                 cwd=SCRIPT_DIR, capture_output=True, timeout=30)
+            # 追踪对比结果
+            subproc_mod.run([sys.executable, 'dual_track.py', date_str],
+                         cwd=SCRIPT_DIR, capture_output=True, timeout=30)
+            log('DUAL', '双引擎对比已完成')
+        except Exception as e:
+            log('WARN', '双引擎对比异常: {}'.format(e))
+        
     finally:
         _release_lock(lock_name)
         log('LOCK', '已释放 pipeline 锁 ({})'.format(date_str))

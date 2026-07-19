@@ -41,8 +41,9 @@ log = setup_logger('step24', LOG_DIR)
 import requests, re, json, time
 from bs4 import BeautifulSoup
 from datetime import datetime
+from _http_cache import CachedSession
 
-sess = requests.Session()
+sess = CachedSession()
 sess.headers.update({
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
 })

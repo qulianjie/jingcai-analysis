@@ -118,7 +118,10 @@ def generate_conclusion(md_path):
                 patterns['confidence_adjust'] = learned_v2.get('confidence_accuracy', {})
                 patterns['profit_direction_accuracy'] = learned_v2.get('profit_direction_accuracy', [])
                 patterns['panlu_accuracy'] = learned_v2.get('panlu_accuracy', [])
-                patterns['high_accuracy_combos'] = learned_v2.get('high_accuracy_combos', [])
+                patterns['high_lift_combos'] = learned_v2.get('high_lift_combos', [])
+                patterns['reverse_signal_combos'] = learned_v2.get('reverse_signal_combos', [])
+                # 兼容旧版字段名
+                patterns['high_accuracy_combos'] = learned_v2.get('high_accuracy_combos', patterns['high_lift_combos'])
                 patterns['low_accuracy_combos'] = learned_v2.get('low_accuracy_combos', [])
                 patterns['handicap_accuracy'] = learned_v2.get('handicap_accuracy', {})
                 patterns['prediction_consistency'] = learned_v2.get('prediction_consistency', {})
@@ -426,7 +429,7 @@ def generate_conclusion(md_path):
 
             log.warn(f"[final_concl] 解析异常")
     # ===== 1. 组合模式匹配 (Wilson Score) =====
-    all_combos = learned_v2.get('high_accuracy_combos', []) + learned_v2.get('low_accuracy_combos', [])
+    all_combos = learned_v2.get('high_lift_combos', []) + learned_v2.get('reverse_signal_combos', []) + learned_v2.get('high_accuracy_combos', []) + learned_v2.get('low_accuracy_combos', [])
 
     # 提取标签
     ctx_tags = []

@@ -7,6 +7,7 @@
 """
 import sys, os, requests, json, io
 from _log_util import setup_logger
+from _http_cache import CachedSession
 
 # 支持两种调用方式：match_dir 模式 或 参数模式
 if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]):
@@ -49,7 +50,7 @@ AJAX_H = {
     'X-Requested-With': 'XMLHttpRequest',
 }
 
-sess = requests.Session()
+sess = CachedSession()
 sess.headers.update(HEADERS)
 sess.get('https://odds.500.com/', timeout=10)
 
@@ -76,7 +77,7 @@ def fetch_ouzi_odds(fid, company_row='1'):
     """Fetch European odds from 500.com. company_row: '1'=竞彩, '6'=Interwetten"""
     try:
         url = 'https://odds.500.com/fenxi/ouzhi-%s.shtml' % fid
-        resp = requests.get(url, headers=HEADERS, timeout=10)
+        resp = sess.get(url, headers=HEADERS, timeout=10)
         resp.encoding = 'gbk'
         soup = BeautifulSoup(resp.text, 'html.parser')
         for table in soup.find_all('table'):
@@ -102,7 +103,7 @@ def fetch_iw_odds(fid):
 def fetch_rangqiu_odds(fid):
     try:
         url = 'https://odds.500.com/fenxi/rangqiu-%s.shtml' % fid
-        resp = requests.get(url, headers=HEADERS, timeout=10)
+        resp = sess.get(url, headers=HEADERS, timeout=10)
         resp.encoding = 'gbk'
         soup = BeautifulSoup(resp.text, 'html.parser')
         for table in soup.find_all('table'):

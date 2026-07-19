@@ -78,30 +78,38 @@ def fetch_trade_500(date_str):
             'Upgrade-Insecure-Requests': '1',
         }
         
-        url = f'https://trade.500.com/jczq/?playid=269&g=2&date={date_str}'
+        # NOTE: trade.500.com returns EMPTY data-fixtureid/homeid/awayid 
+        # when date= parameter is passed. Always fetch without date param,
+        # then filter matches by data-processdate.
         session = requests.Session()
         session.headers.update(headers)
-        
         session.get('https://trade.500.com/', timeout=10)
-        resp = session.get(url, timeout=15)
+        resp = session.get('https://trade.500.com/jczq/?playid=269&g=2', timeout=15)
         html = resp.content.decode('gbk', errors='ignore')
         
         tr_blocks = re.findall(r'<tr[^>]*data-fixtureid="[^"]*"[^>]*>', html, re.DOTALL)
         
         matches = []
         for tr in tr_blocks:
-            fid = re.search(r'data-fixtureid="(\d+)"', tr)
+            fid = re.search(r'data-fixtureid="([^"]*)"', tr)
             matchnum = re.search(r'data-matchnum="([^"]*)"', tr)
             home = re.search(r'data-homesxname="([^"]*)"', tr)
             away = re.search(r'data-awaysxname="([^"]*)"', tr)
             time = re.search(r'data-matchtime="([^"]*)"', tr)
             rq = re.search(r'data-rangqiu="([^"]*)"', tr)
             league = re.search(r'data-simpleleague="([^"]*)"', tr)
+            data_id = re.search(r'data-id="(\d+)"', tr)
             
+            pdate = re.search(r'data-processdate="([^"]*)"', tr)
+            process_date = pdate.group(1) if pdate else ''
+            # Filter: only keep matches matching requested date
+            if process_date != date_str:
+                continue
             if fid and matchnum and home:
+                fid_val = fid.group(1) or (data_id.group(1) if data_id else '')
                 matches.append({
                     'matchnum': matchnum.group(1),
-                    'fid': fid.group(1),
+                    'fid': fid_val,
                     'home': home.group(1),
                     'away': away.group(1) if away else '',
                     'time': time.group(1) if time else '',
@@ -192,7 +200,9 @@ def fetch_sunday_matches(date_str=None):
     log.info(f'[WARN] 所有数据源均未获取到 {date_str} 的比赛数据')
     return None
 
-def save_matches(matches, date_str, base_dir='jingcai/tasks'):
+def save_matches(matches, date_str, base_dir=None):
+    if base_dir is None:
+        base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tasks')
     """保存比赛数据到文件"""
     if not matches:
         return None
@@ -248,11 +258,13 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='获取当日竞彩比赛列表（多数据源）')
     parser.add_argument('--date', help='比赛日期（YYYY-MM-DD），默认今天')
-    parser.add_argument('--output-dir', default='jingcai/tasks', help='输出目录')
+    parser.add_argument('--output-dir', default=None, help='输出目录')
     args = parser.parse_args()
     
     date_str = args.date or datetime.now().strftime('%Y-%m-%d')
     base_dir = args.output_dir
+    if base_dir is None:
+        base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tasks')
     
     log.info(f'[STEP] 第0步：获取竞彩比赛列表（多数据源 fallback）')
     log.info(f'[DATE] 比赛日期: {date_str}')

@@ -336,8 +336,8 @@ def fix_match(date_str, match_num, report_path, match_dir):
         if os.path.exists(script_path):
             try:
                 result = subprocess.run(
-                    [sys.executable, script_path, match_dir] + args,
-                    capture_output=True, text=True, timeout=120,
+                    ['/mnt/c/Python314/python.exe', script_path, match_dir] + args,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=120,
                     encoding='utf-8', errors='replace'
                 )
                 if result.returncode != 0:
@@ -349,8 +349,8 @@ def fix_match(date_str, match_num, report_path, match_dir):
     script_path = os.path.join(SCRIPT_DIR, 'final_report_generator.py')
     try:
         result = subprocess.run(
-            [sys.executable, script_path, match_dir, report_path],
-            capture_output=True, text=True, timeout=120,
+            ['/mnt/c/Python314/python.exe', script_path, match_dir, report_path],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=120,
             encoding='utf-8', errors='replace'
         )
         return result.returncode == 0

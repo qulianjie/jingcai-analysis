@@ -6,6 +6,7 @@
 import sys, os, requests, re, time, json
 from bs4 import BeautifulSoup
 from datetime import datetime
+from _http_cache import CachedSession
 
 # 支持两种调用方式：match_dir 模式 或 参数模式
 if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]):
@@ -34,7 +35,7 @@ else:
     OUT4 = sys.argv[6] if len(sys.argv) > 6 else ''
     OUT6 = sys.argv[7] if len(sys.argv) > 7 else ''
 
-sess = requests.Session()
+sess = CachedSession()
 sess.headers.update({
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -176,7 +177,7 @@ try:
             if len(tds) < 12: continue
             name = tds[1].get_text().strip()
             if '澳门' in name:
-                for idx in [3, 4, 5, 10, 11]:
+                for idx in [10, 11, 3, 4, 5]:  # 即时盘(td10)优先于初盘(td3)
                     if idx < len(tds):
                         val = tds[idx].get_text().strip().replace(chr(160), '')
                         if any(c in val for c in ['让', '球', '半', '盘', '受让']):

@@ -4,6 +4,11 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 const log = require('./_log_util.js');
+const nv = require('./_notion_verify.js');
+// FIX: c-ares can't reach link-local IPv6 DNS from WSL-bridged Windows Node
+const dns = require('dns');
+dns.setServers(['208.67.222.222', '8.8.8.8', '1.1.1.1']);
+dns.setDefaultResultOrder('ipv4first');
 log.setLogDir(path.join(__dirname, 'tasks', new Date().toISOString().slice(0,10), 'logs'));
 
 
@@ -267,6 +272,7 @@ async function fetchMatchResults(dateStr) {
     return new Promise((resolve) => {
         const url = `https://trade.500.com/jczq/?playid=269&g=2&date=${dateStr}`;
         https.get(url, {
+            family: 4,
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 'Accept': 'text/html,application/xhtml+xml',
@@ -336,6 +342,7 @@ function queryNotionMatches(dateStr) {
             hostname: 'api.notion.com',
             path: `/v1/databases/${DB_ID}/query`,
             method: 'POST',
+            family: 4,
             headers: {
                 'Authorization': 'Bearer ' + API_KEY,
                 'Notion-Version': '2022-06-28',
@@ -353,6 +360,7 @@ function queryNotionMatches(dateStr) {
             });
         });
         req.on('error', reject);
+        req.setTimeout(30000, () => { req.destroy(); reject(new Error('Notion timeout')); });
         req.write(data);
         req.end();
     });
@@ -365,6 +373,7 @@ function notionPatch(pageId, props) {
             hostname: 'api.notion.com',
             path: `/v1/pages/${pageId}`,
             method: 'PATCH',
+            family: 4,
             headers: {
                 'Authorization': 'Bearer ' + API_KEY,
                 'Notion-Version': '2022-06-28',
@@ -475,6 +484,7 @@ function updateMatch(pageId, score, result, isCorrect, pred, handicap, rqPred, e
             hostname: 'api.notion.com',
             path: `/v1/pages/${pageId}`,
             method: 'PATCH',
+            family: 4,
             headers: {
                 'Authorization': 'Bearer ' + API_KEY,
                 'Notion-Version': '2022-06-28',
@@ -1163,7 +1173,14 @@ async function main() {
     console.log(`   已更新: ${updated}`);
     console.log(`   已跳过: ${skipped}`);
     console.log(`   待查: ${notionPages.length - updated - skipped}`);
-    
+
+    // === 上传后核查：读回 Notion 校验字段完整性 ===
+    try {
+        await nv.verifyAfterUpload(targetDate, DB_ID, API_KEY, null);
+    } catch(e) {
+        console.log(`[WARN] 上传后核查异常: ${e.message}`);
+    }
+
     // 4. 生成分组统计并写入Notion
     console.log('\n[4/5] 生成分组统计...');
     const groups = generateGroupStats(notionPages, matchResults, predictions);
@@ -1229,6 +1246,13 @@ async function main() {
 }
 
 main().catch(err => {
-    console.error('[FATAL]', err.message);
+    console.error('[FATAL]', JSON.stringify({
+        name: err.constructor?.name || typeof err,
+        message: err.message || '',
+        code: err.code || null,
+        errno: err.errno || null,
+        syscall: err.syscall || null,
+        stack: (err.stack || '').substring(0, 2000)
+    }));
     process.exit(1);
 });

@@ -4,10 +4,11 @@
 用法1: python step7_runner.py <fid> <league> [output_path]
 用法2: python step7_runner.py <match_dir>  (自动从 meta.json 读取 fid/league)
 """
-import sys, os, io, re, time, json, traceback
+import sys, os, re, io, time, json, traceback
 from urllib.parse import quote
 from _log_util import setup_logger
-
+import requests
+from _http_cache import CachedSession
 # 支持两种调用方式：match_dir 模式 或 参数模式
 if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]):
     MATCH_DIR = sys.argv[1]
@@ -50,7 +51,7 @@ HEADERS = {
     'Accept-Language': 'zh-CN,zh;q=0.9',
 }
 
-sess = requests.Session()
+sess = CachedSession()
 sess.headers.update(HEADERS)
 
 HANDICAP_ORDER = [
@@ -101,21 +102,32 @@ def match_level(bench_cp, bench_w, hist_cp, hist_w):
     elif score >= 0.8: return '中'
     return '低'
 
-def extract_macau_odds(text):
-    """从yazhi页面HTML中提取澳门初盘（正则方式）"""
-    # 澳门公司名在页面中为 <span class="quancheng">*门</span>
-    # 初盘数据在紧随的 <td> 内（非即时盘td）
-    # 模式: quancheng标签含"门" -> 跳过公司名td和即时盘td -> 找到初盘的pl_table_data
+def extract_macau_odds(text, meta=None):
+    """从yazhi页面HTML中提取澳门初盘
+    500.com近期对公司名做了混淆（如澳门→M*************），
+    改用cid=5定位澳门行，盘口名从meta.json的macau_line读取。
+    """
+    import re
+    raw = text if isinstance(text, bytes) else text.encode('gbk', errors='replace')
+    m = re.search(rb'cid=5.*?quancheng[^>]*>[^<]+</span>.*?pl_table_data[^>]*>.*?<td[^>]*>([^<]+)</td>\s*<td[^>]*>([^<]+)</td>\s*<td[^>]*>([^<]+)</td>', raw, re.DOTALL)
+    if m:
+        w1 = m.group(1).decode('gbk', errors='replace')
+        cp_raw = m.group(2).decode('gbk', errors='replace')
+        w2 = m.group(3).decode('gbk', errors='replace')
+        # 水位取纯数字部分（去掉混淆后缀如"隆媒"）
+        w1_num = re.search(r'\d+\.\d+', w1)
+        w2_num = re.search(r'\d+\.\d+', w2)
+        w1 = w1_num.group() if w1_num else w1
+        w2 = w2_num.group() if w2_num else w2
+        # 盘口名：信任实时提取值，不信任meta.json（可能被前序run的编码错误污染）
+        cp = cp_raw.strip()
+        cp = re.sub(r'<font[^>]*>.*?</font>', '', cp).strip()
+        return {'init_cp': cp, 'init_w': w1, 'init_w2': w2}
+    # 后备：原name-based方式（兼容旧版/未混淆页面）
     m = re.search(r'quancheng[^<]*门.*?</span></a>.*?</td>\s*<td[^>]*>\s*<table[^>]*class="pl_table_data"[^>]*>.*?<td[^>]*>(\d+\.\d+)</td>\s*<td[^>]*>([^<]+)</td>\s*<td[^>]*>(\d+\.\d+)</td>', text, re.DOTALL)
     if m:
         cp = m.group(2).strip()
-        # 去掉升/降标记如 <font color="red"> 升</font>
         cp = re.sub(r'<font[^>]*>.*?</font>', '', cp).strip()
-        return {'init_cp': cp, 'init_w': m.group(1), 'init_w2': m.group(3)}
-    # fallback
-    m = re.search(r'quancheng[^<]*门.*?</td>\s*<td[^>]*>\s*<table[^>]*>.*?<td[^>]*>(\d+\.\d+)</td>\s*<td[^>]*>([^<]+)</td>\s*<td[^>]*>(\d+\.\d+)</td>', text, re.DOTALL)
-    if m:
-        cp = re.sub(r'<font[^>]*>.*?</font>', '', m.group(2)).strip()
         return {'init_cp': cp, 'init_w': m.group(1), 'init_w2': m.group(3)}
     return None
 
@@ -233,7 +245,7 @@ except Exception as e:
     log.error('获取页面失败: %s' % e)
     sys.exit(1)
 
-macau_info = extract_macau_odds(text)
+macau_info = extract_macau_odds(text, meta)
 if not macau_info:
     log.error('未找到澳门盘口数据')
     sys.exit(0)
@@ -253,6 +265,16 @@ cp_map = {
 cp_key = macau_cp_raw.replace(' ', '').replace('\xa0', '')
 macau_cp = cp_map.get(cp_key, macau_cp_raw)
 
+
+# 写回meta.json（供step8读取澳门盘口）
+try:
+    if 'MATCH_DIR' in dir() and MATCH_DIR and os.path.exists(os.path.join(MATCH_DIR, 'meta.json')):
+        mp = os.path.join(MATCH_DIR, 'meta.json')
+        mm = json.load(open(mp, 'r', encoding='utf-8'))
+        mm['macau_line'] = cp_key
+        json.dump(mm, open(mp, 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
+except Exception as e:
+    print('WARN: 写回macau_line失败:', e)
 print('本场比赛:')
 print('  FID: %s' % FID)
 print('  联赛: %s' % LEAGUE)

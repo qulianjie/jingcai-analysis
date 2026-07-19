@@ -372,9 +372,9 @@ def analyze_zhuangjia(text):
     bet_diff = max(home_bet_pct, draw_bet_pct, away_bet_pct) - min(home_bet_pct, draw_bet_pct, away_bet_pct)
     
     # 庄家盈亏
-    home_profit = data_section.get('主胜', {}).get('profit', '0')
-    draw_profit = data_section.get('平局', {}).get('profit', '0')
-    away_profit = data_section.get('客胜', {}).get('profit', '0')
+    home_profit = data_section.get('主胜', {}).get('profit_raw', '0')
+    draw_profit = data_section.get('平局', {}).get('profit_raw', '0')
+    away_profit = data_section.get('客胜', {}).get('profit_raw', '0')
     
     try:
         home_profit_val = float(home_profit.replace(',', ''))
@@ -387,6 +387,23 @@ def analyze_zhuangjia(text):
     # 1. 投注占比高但庄家盈利高 → 庄家看好该结果
     # 2. 投注占比高但庄家亏损 → 该结果可能打不出（诱盘）
     score = 0
+    
+    # 找出盈利最高的方向（不受热度阈值限制）
+    max_profit = max(home_profit_val, draw_profit_val, away_profit_val)
+    min_profit = min(home_profit_val, draw_profit_val, away_profit_val)
+    
+    if max_profit > 0 and min_profit < 0:
+        # 有明确赚钱和亏钱的方向 → 赌客在某个方向输了钱（庄家盈利）
+        # 卖出亏钱的方向、买入赚钱的方向
+        if home_profit_val < 0 and home_profit_val == min_profit:
+            score -= 0.2  # 主胜亏钱→看好客胜
+        if away_profit_val < 0 and away_profit_val == min_profit:
+            score += 0.2  # 客胜亏钱→看好主胜
+        # 赚钱最多的方向额外奖励
+        if home_profit_val > 0 and home_profit_val == max_profit:
+            score += 0.15  # 主胜赚钱最多→利好主
+        if away_profit_val > 0 and away_profit_val == max_profit:
+            score -= 0.15  # 客胜赚钱最多→利好客
     
     # 投注占比差值>15%说明有明显热度
     if bet_diff > 15:

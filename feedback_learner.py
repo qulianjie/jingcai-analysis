@@ -264,23 +264,28 @@ def extract_step25_data(match_dir, date_dir):
     for key in ['主胜', '平局', '客胜']:
         if key in data:
             item = data[key]
-            result[f'{key}_盈亏'] = item.get('盈亏方向', '')
-            result[f'{key}_投注额'] = item.get('投注额', '')
-            result[f'{key}_占比'] = item.get('占比', '')
-    
-    # 综合方向
-    result['庄家方向'] = s25.get('conclusion', {}).get('庄家方向', '')
-    result['大热方'] = s25.get('conclusion', {}).get('大热方', '')
-    
-    # 盈亏方向（从 labels 推断）
+            pd = item.get('profit_dir', None)
+            result[f'{key}_盈亏'] = '赢钱' if pd is True else ('亏钱' if pd is False else '')
+            result[f'{key}_投注额'] = item.get('volume', '')
+            result[f'{key}_占比'] = item.get('bet_pct', '')
+
+    # 综合方向（从 labels 推断）
     labels = s25.get('labels', {})
-    if not result['庄家方向']:
-        for key in ['主胜', '平局', '客胜']:
-            if key in labels:
-                profit_val = labels[key].get('profit', '')
-                if profit_val in ['赢钱', '少', '中']:
-                    result['庄家方向'] = key
-                    break
+    # 庄家方向 = 庄家赚最多的选项（profit=多/中）
+    for key in ['主胜', '平局', '客胜']:
+        if key in labels:
+            profit_label = labels[key].get('profit', '')
+            if profit_label in ['多', '中']:
+                result['庄家方向'] = key
+                break
+    # 大热方 = 投注最多的选项（bet_pct=多）
+    for key in ['主胜', '平局', '客胜']:
+        if key in labels:
+            bp_label = labels[key].get('bet_pct', '')
+            if bp_label == '多':
+                result['大热方'] = key
+                break
+
     
     if result.get('庄家方向'):
         result['盈亏方向'] = result['庄家方向']
@@ -958,13 +963,18 @@ def analyze_feedback_patterns():
             if asian_val and '让球趋势_dir' in combo and s25_data.get('庄家方向'):
                 combo_tags.append(f'让球:{combo["让球趋势_dir"]}×庄家:{s25_data["庄家方向"]}×澳门亚盘:{asian_val}×联赛:{league}')
             
-            # 记录每个组合标签的准确率
+            # 记录每个组合标签的明细结果分布
+            pred_outcome = predicted if predicted in ['胜', '平', '负'] else '胜'
             for tag in combo_tags:
                 if tag not in combo_stats:
-                    combo_stats[tag] = {'total': 0, 'correct': 0}
+                    combo_stats[tag] = {'total': 0, 'by_predicted': {}}
                 combo_stats[tag]['total'] += 1
-                if is_correct:
-                    combo_stats[tag]['correct'] += 1
+                if tag not in combo_stats:
+                    combo_stats[tag] = {'total': 0, 'by_predicted': {}}
+                po = combo_stats[tag]['by_predicted']
+                if pred_outcome not in po:
+                    po[pred_outcome] = {'胜': 0, '平': 0, '负': 0}
+                po[pred_outcome][actual] = po[pred_outcome].get(actual, 0) + 1
             
             # 庄家盈亏方向统计
             if s25_data.get('庄家方向'):
@@ -991,31 +1001,66 @@ def analyze_feedback_patterns():
     # ===== 5. 生成学习结果 =====
     print(f'\n[5/6] 生成学习结果...\n')
     
-    # 5a. 高准确率组合（≥60%且≥5场）
-    # 修复：低准确率组合提高阈值到≥10场，避免n=5的偶然低准确率被惩罚
-    high_combos = []
-    low_combos = []
-    for tag, stats in combo_stats.items():
-        acc = stats['correct'] / stats['total'] if stats['total'] > 0 else 0
-        # 高准确率：≥5场且≥60%
-        if stats['total'] >= 5 and acc >= 0.60:
-            high_combos.append({
-                'tag': tag,
-                'accuracy': round(acc, 3),
-                'total': stats['total'],
-                'correct': stats['correct'],
-            })
-        # 低准确率：≥10场且≤35%（提高样本阈值，避免偶然低准确率被惩罚）
-        elif stats['total'] >= 10 and acc <= 0.35:
-            low_combos.append({
-                'tag': tag,
-                'accuracy': round(acc, 3),
-                'total': stats['total'],
-                'correct': stats['correct'],
-            })
+    # 5a. 高提升度组合（用lift找异常高概率模式，不卡最小场次）
+    # 基础概率：主胜≈42.5%, 平≈29.0%, 负≈28.5%
+    BASE_RATES = {'胜': 0.425, '平': 0.290, '负': 0.285}
+    PRIOR_STRENGTH = 5  # 贝叶斯先验强度（小样本收缩用）
     
-    high_combos.sort(key=lambda x: x['accuracy'], reverse=True)
-    low_combos.sort(key=lambda x: x['accuracy'])
+    high_lift_combos = []
+    reverse_combos = []  # 反向信号：预测某结果但实际很少发生
+    
+    for tag, stats in combo_stats.items():
+        by_pred = stats.get('by_predicted', {})
+        for pred_outcome, actual_counts in by_pred.items():
+            n = sum(actual_counts.values())
+            if n == 0:
+                continue
+            correct = actual_counts.get(pred_outcome, 0)
+            
+            # 贝叶斯平滑：小样本向基础概率收缩
+            base = BASE_RATES.get(pred_outcome, 0.33)
+            smoothed = (correct + base * PRIOR_STRENGTH) / (n + PRIOR_STRENGTH)
+            lift = smoothed / base if base > 0 else 0
+            
+            raw_acc = correct / n if n > 0 else 0
+            
+            # 正向信号：预测结果实际发生概率明显高于基础概率
+            if lift >= 1.5 and n >= 1:
+                # 可信度评分：样本越大越可信
+                trust = min(1.0, n / (n + PRIOR_STRENGTH))
+                high_lift_combos.append({
+                    'tag': tag,
+                    'predicted': pred_outcome,
+                    'accuracy': round(raw_acc, 3),
+                    'smoothed': round(smoothed, 3),
+                    'lift': round(lift, 2),
+                    'total': n,
+                    'correct': correct,
+                    'trust': round(trust, 3),
+                    'detail': {k: v for k, v in sorted(actual_counts.items())},
+                })
+            
+            # 反向信号：预测某结果但实际很少发生（反向买可能更好）
+            reverse_rate = 1 - smoothed
+            reverse_base = 1 - base
+            reverse_lift = reverse_rate / reverse_base if reverse_base > 0 else 0
+            if reverse_lift >= 1.5 and n >= 1:
+                # 找出实际最高概率的结果
+                actual_best = max(actual_counts, key=actual_counts.get)
+                reverse_combos.append({
+                    'tag': tag,
+                    'predicted': pred_outcome,
+                    'suggest_bet': actual_best,
+                    'accuracy': round(raw_acc, 3),
+                    'smoothed': round(smoothed, 3),
+                    'reverse_lift': round(reverse_lift, 2),
+                    'total': n,
+                    'correct': correct,
+                    'detail': {k: v for k, v in sorted(actual_counts.items())},
+                })
+    
+    high_lift_combos.sort(key=lambda x: (x['lift'], x['total']), reverse=True)
+    reverse_combos.sort(key=lambda x: (x['reverse_lift'], x['total']), reverse=True)
     
     # 5b. 联赛准确率排序（提高最小样本到≥5场）
     league_ranked = []
@@ -1077,14 +1122,14 @@ def analyze_feedback_patterns():
     print(f'[6/6] 保存学习结果...\n')
     
     learned = {
-        'version': '2.0',
+        'version': '3.0',
         'updated': datetime.now().isoformat(),
         'total_matches': len(processed),
         'total_dates': len(dates),
         
-        # 核心学习结果
-        'high_accuracy_combos': high_combos,
-        'low_accuracy_combos': low_combos,
+        # 核心学习结果（V3: lift提升度模式发现）
+        'high_lift_combos': high_lift_combos,
+        'reverse_signal_combos': reverse_combos,
         'expert_patterns': expert_patterns_collected,
         
         # 维度统计
@@ -1121,13 +1166,13 @@ def analyze_feedback_patterns():
     
     print(f'\n总场次: {len(processed)} 场, {len(dates)} 个日期')
     
-    print(f'\n高准确率组合 (>=60%, >=5场):')
-    for c in high_combos[:15]:
-        print(f'   {c["tag"]}: {c["accuracy"]*100:.0f}% ({c["correct"]}/{c["total"]})')
+    print(f'\n高提升度信号 (lift>=1.5, 不限场次):')
+    for c in high_lift_combos[:15]:
+        print(f'   ↑{c["lift"]:.1f}x {c["tag"]} → 预测{c["predicted"]}: {c["accuracy"]*100:.0f}% ({c["correct"]}/{c["total"]}, 平滑{c["smoothed"]*100:.0f}%)')
     
-    print(f'\n低准确率组合 (<=35%, >=5场):')
-    for c in low_combos[:10]:
-        print(f'   {c["tag"]}: {c["accuracy"]*100:.0f}% ({c["correct"]}/{c["total"]})')
+    print(f'\n反向信号 (反着买可能更好):')
+    for c in reverse_combos[:10]:
+        print(f'   ↓{c["reverse_lift"]:.1f}x {c["tag"]} → 预测{c["predicted"]}但建议{c["suggest_bet"]}: {c["accuracy"]*100:.0f}% ({c["correct"]}/{c["total"]})')
     
     print(f'\n联赛准确率 TOP10:')
     for l in league_ranked[:10]:

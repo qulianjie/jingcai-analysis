@@ -36,8 +36,10 @@ if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]):
         LEAGUE = meta.get('league', '')
         FID = meta.get('fid', '')
         MACAU_LINE = meta.get('macau_line', '')
+        RQ = str(meta.get('rq', ''))
     else:
         HOME_ID = AWAY_ID = LEAGUE = FID = MACAU_LINE = ''
+        RQ = ''
     OUTPUT_PATH = os.path.join(MATCH_DIR, 'group03_asian', 'step8_same_league.txt')
     OUTPUT_PATH_1923 = os.path.join(MATCH_DIR, 'group06_baijia', 'step19_baijia_compare.txt')
 else:
@@ -71,15 +73,41 @@ from _league_util import _league_match, LEAGUE_ID_MAP
 def gd(a, b):
     try:
         fa, fb = float(a), float(b)
-        if fb < fa - 0.01: return '\u2b07'
-        elif fb > fa + 0.01: return '\u2b06'
-    except:
-
-        log.warn(f"[step8] 解析异常")
-    return '\u27a1'
+        if fb < fa - 0.01: return '⬇'
+        elif fb > fa + 0.01: return '⬆'
+        else: return ''
+    except Exception as e:
+        raise RuntimeError(f'[step8] gd()解析失败: {e}')
 
 def dir_str3(iw, id_, il, lw, ld, ll):
-    return gd(iw, lw) + gd(id_, ld) + gd(il, ll)
+    return (gd(iw, lw) if iw is not None else '') + (gd(id_, ld) if id_ is not None else '') + (gd(il, ll) if il is not None else '')
+def _normalize_handicap_name(raw_name, rq_str=None):
+    """清洗macau_line, 如果乱码则从rq推导"""
+    if not raw_name:
+        return raw_name
+    # 检查是否包含有效盘口汉字（至少含一个常见盘口字）
+    valid_handicap_chars = {'平','手','半','球','一','两','三','四','受','让','/','.','·'}
+    has_valid_char = any(c in valid_handicap_chars for c in raw_name)
+    if has_valid_char:
+        # 清洗升降后缀
+        return raw_name.replace('升','').replace('降','').strip()
+    # 乱码，从rq推导
+    RQ_MAP = {
+        '-3': '三球', '-2.5': '两球半', '-2.25': '两球/两球半',
+        '-2': '两球', '-1.75': '两球半', '-1.5': '球半',
+        '-1.25': '一球/球半', '-1': '一球',
+        '-0.75': '半球/一球', '-0.5': '半球',
+        '-0.25': '平手/半球', '0': '平手',
+        '0.25': '受让平手/半球', '0.5': '受让半球',
+        '0.75': '受让半球/一球', '1': '受让一球',
+        '1.25': '受让一球/球半', '1.5': '受让球半',
+    }
+    if rq_str and rq_str in RQ_MAP:
+        fallback = RQ_MAP[rq_str]
+        log.info('  macau_line乱码(%s), 从rq=%s推导: %s' % (repr(raw_name), rq_str, fallback))
+        return fallback
+    return raw_name.replace('升','').replace('降','').strip()
+
 
 def match_level(bench, hist):
     if len(bench) != 3 or len(hist) != 3: return '-'
@@ -102,7 +130,7 @@ def stats_summary(s):
 
 def clean_text(s):
     """Clean text from page, remove arrows and special chars"""
-    return s.replace('\u00a0', '').replace('\u2193', '').replace('\u2191', '').replace('\u2b07', '').replace('\u2b06', '').replace(' ', '').strip()
+    return s.replace('\u00a0', '').replace('\u2193', '').replace('\u2191', '').replace('\u2b07', '').replace('\u2b06', '').replace(' ', '').replace('\n', '').replace('%', '').strip()
 
 def match_odds_prefix(bench, hist):
     """Match odds: compare all three (home win, draw, away win) - integer + first decimal digit
@@ -119,8 +147,8 @@ def match_odds_prefix(bench, hist):
             if b_int == h_int and b_dec == h_dec:
                 match_count += 1
         return match_count >= 2  # at least 2 out of 3 match
-    except:
-        return False
+    except Exception as e:
+        raise RuntimeError(f'[step8] match_odds_prefix()解析失败: {e}')
 
 # ============ 获取历史比赛（整个联赛） ============
 log.info('获取整个联赛比赛...')
@@ -139,7 +167,7 @@ if LEAGUE_CACHE_DIR:
                 _loaded_from_cache = True
                 _cached_league_matches = cache_data['all_matches']
         except Exception as e:
-            log.info('  缓存加载失败: {}，回退到在线爬取'.format(e))
+            raise RuntimeError('缓存加载失败，回退已禁用: {}'.format(e))
 
 if _loaded_from_cache:
     # 从缓存构建 league_matches（同联赛筛选+去重+排除当前比赛）
@@ -166,6 +194,8 @@ if _loaded_from_cache:
             'round': m.get('ROUND', ''),
             'home_id': str(m.get('HOMETEAMID', '')),
             'away_id': str(m.get('AWAYTEAMID', '')),
+            'odds_asian': m.get('odds_asian'),
+            'odds_europe': m.get('odds_europe'),
         })
     log.info('  同联赛(缓存): {} 场 (去重后)'.format(len(league_matches)))
 
@@ -186,10 +216,8 @@ def _load_fid_cache():
             with open(p, encoding='utf-8') as f:
                 _FID_CACHE = json.load(f)
             return True
-    except:
-
-        log.warn(f"[step8] 解析异常")
-    return False
+    except Exception as e:
+        raise RuntimeError(f'[step8] _load_fid_cache()失败: {e}')
 
 def _from_cache(fid, dt):
     if not _load_fid_cache():
@@ -244,10 +272,10 @@ if not _loaded_from_cache:
                                 all_cup_matches[fid] = data
                                 team_ids.add(str(data.get('HOMETEAMID', '')))
                                 team_ids.add(str(data.get('AWAYTEAMID', '')))
-                        except:
-                            continue
-                except:
-                    log.warn(f"[step8] 解析异常")
+                        except Exception as e:
+                            raise RuntimeError(f'[step8] 杯赛数据JSON解析失败: {e}')
+                except Exception as e:
+                    raise RuntimeError(f'[step8] 杯赛HTTP请求失败: {e}')
                 time.sleep(0.1)
                 if i % 10 == 0:
                     log.info('    已处理 {}/{} 支...'.format(i, len(round_teams)))
@@ -286,22 +314,7 @@ if not _loaded_from_cache:
         league_id = LEAGUE_ID_MAP.get(LEAGUE, '')
         if not league_id:
             log.info('  ⚠️ 联赛 "{}" 未在映射表中，尝试从球队赛程推断...'.format(LEAGUE))
-            # 回退：从主队赛程中获取联赛球队
-            try:
-                url = 'https://liansai.500.com/team/{}/teamfixture/'.format(HOME_ID)
-                resp = sess.get(url, timeout=15)
-                resp.encoding = 'gbk'
-                soup = BeautifulSoup(resp.text, 'html.parser')
-                for a in soup.find_all('a', href=True):
-                    href = a.get('href', '')
-                    m = re.search(r'/zuqiu-(\d+)/', href)
-                    if m:
-                        league_id = m.group(1)
-                        LEAGUE_ID_MAP[LEAGUE] = league_id
-                        log.info('  从球队赛程推断联赛ID: {} = {}'.format(LEAGUE, league_id))
-                        break
-            except Exception as e:
-                log.info('  推断失败: {}'.format(e))
+            raise ValueError('联赛 \"{}\" 未在映射表中，无在线回退(已禁用)'.format(LEAGUE))
 
         if league_id:
             league_url = 'https://liansai.500.com/zuqiu-{}/'.format(league_id)
@@ -316,17 +329,13 @@ if not _loaded_from_cache:
                     if m and '/teamfixture/' not in href:
                         team_ids.add(m.group(1))
             except Exception as e:
-                log.info('  获取联赛球队失败: {}'.format(e))
+                raise RuntimeError(f'[step8] 获取联赛球队失败: {e}')
 
-        # 如果联赛页面返回0球队（19xxx ID没有静态页面），回退到球队赛程收集
         if len(team_ids) == 0 and league_id:
-            log.info('  ⚠️ 联赛页面返回0球队，回退到球队赛程收集')
-            team_ids = {HOME_ID, AWAY_ID}
-            league_id = ''
+            raise ValueError(f'联赛页面返回0球队，无法获取球队列表(回退已禁用)')
 
         if not league_id and len(team_ids) == 0:
-            log.info('  ⚠️ 无法获取联赛ID，回退到主队+客队')
-            team_ids = {HOME_ID, AWAY_ID}
+            raise ValueError(f'无法获取联赛ID且球队列表为空(回退已禁用)')
 
         log.info('  联赛球队: {} 支'.format(len(team_ids)))
 
@@ -340,10 +349,10 @@ if not _loaded_from_cache:
                 soup = BeautifulSoup(resp.text, 'html.parser')
                 for tr in soup.find_all('tr', attrs={'data': True}):
                     try: data = json.loads(tr.get('data', '{}'))
-                    except: continue
+                    except Exception as e: raise RuntimeError(f'[step8] 赛程JSON解析失败: {e}')
                     all_matches.append(data)
-            except:
-                log.warn(f"[step8] 解析异常")
+            except Exception as e:
+                raise RuntimeError(f'[step8] 球队赛程HTTP请求失败: {e}')
             time.sleep(0.2)
             if i % 4 == 0:
                 log.info('  已获取 {}/{} 支球队...'.format(i, len(team_ids)))
@@ -383,12 +392,16 @@ log.info('='*60)
 log.info('第八步：相同联赛相同亚盘统计')
 log.info('='*60)
 log.info('澳门即时盘: {}'.format(MACAU_LINE))
+# 归一化macau_line（处理乱码，从rq推导）
+MACAU_LINE_NORM = _normalize_handicap_name(MACAU_LINE, RQ)
+if MACAU_LINE_NORM != MACAU_LINE:
+    log.info('  归一化后: {}'.format(MACAU_LINE_NORM))
 print()
 
 handicap_matches = []
 seen_fid = set()
 # 清洗MACAU_LINE：去掉"升""降"等后缀
-macau_clean = MACAU_LINE.replace('升','').replace('降','').strip()
+macau_clean = MACAU_LINE_NORM.replace('升','').replace('降','').strip()
 for m in league_matches:
     fid_check = m.get('fid', '')
     if fid_check in seen_fid:
@@ -413,43 +426,92 @@ for i, m in enumerate(handicap_matches[:15], 1):
     
     asian = ouzhi = None
     
-    # Get yazhi (优先缓存)
-    asian = None
-    ca = _from_cache(fid, 'asian')
-    if ca:
-        asian = ca
-    if not asian:
-        try:
-            r = sess.get('https://odds.500.com/fenxi/yazhi-{}.shtml'.format(fid), timeout=10)
-            r.encoding = 'gbk'
-            soup = BeautifulSoup(r.text, 'html.parser')
-            for table in soup.find_all('table'):
-                for tr in table.find_all('tr'):
-                    tds = tr.find_all('td')
-                    if len(tds) < 12: continue
-                    name = tds[1].get_text().strip()
-                    if '门' not in name and '澳' not in name: continue
-                    asian = {
-                        'live_pan': clean_text(tds[4].get_text()),
-                        'live_wh': clean_text(tds[3].get_text()),
-                        'live_wa': clean_text(tds[5].get_text()),
-                        'init_pan': clean_text(tds[10].get_text()),
-                        'init_wh': clean_text(tds[9].get_text()),
-                        'init_wa': clean_text(tds[11].get_text()),
-                    }
-                    break
-                if asian: break
-        except:
+    # Get yazhi (优先 league_cache.odds_asian)
+    oa = m.get('odds_asian')
+    if oa and isinstance(oa, dict):
+        asian = oa
+    else:
+        ca = _from_cache(fid, 'asian')
+        if ca:
+            asian = ca
+        else:
+            # Fallback: league cache 的盘口在顶层字段 (HANDICAPLINE/HOMEMONEYLINE/AWAYMONEYLINE)
+            hl = m.get('HANDICAPLINE')
+            hm = m.get('HOMEMONEYLINE')
+            am = m.get('AWAYMONEYLINE')
+            if hl is not None:
+                asian = {
+                    'live_pan': m.get('HANDICAPLINENAME', '') or str(hl),
+                    'live_wh': '{:.2f}'.format(float(hm)) if hm is not None else '',
+                    'live_wa': '{:.2f}'.format(float(am)) if am is not None else '',
+                }
+                log.info(f'  [step8] FID={fid} 从顶层字段取亚盘: {asian["live_pan"]} ({asian["live_wh"]}/{asian["live_wa"]})')
+            else:
+                log.warning(f'[step8][FLAG] FID={fid} {m.get("home","?")}vs{m.get("away","?")} 缺亚盘数据, 跳过')
+                continue
+    # Get ouzhi (优先 league_cache.odds_europe)
+    oe = m.get('odds_europe')
+    if oe and isinstance(oe, dict) and oe.get('jc') and oe.get('iw'):
+        ouzhi = {'jc': oe['jc'], 'iw': oe['iw'], 'av': oe.get('av'), 'all': oe.get('companies', [])}
+    else:
+        cj = _from_cache(fid, 'jc')
+        ci = _from_cache(fid, 'iw')
+        ca2 = _from_cache(fid, 'av')
+        if cj and ci and ca2:
+            ouzhi = {'jc': cj, 'iw': ci, 'av': ca2, 'all': None}
+        else:
+            log.warning(f'  [step8][SKIP] FID={fid} {m.get("home","?")}vs{m.get("away","?")} 欧赔数据未富集, 跳过')
+            continue
+    if asian or ouzhi:
+        step8_data.append({**m, 'asian': asian, 'ouzhi': ouzhi})
+        log.info('  #{} fid={}: {} vs {} {} 亚盘={}({}/{}) 欧赔={}'.format(
+            i, fid, m['home'], m['away'], m['score'],
+            asian['live_pan'] if asian else '-', asian['live_wh'] if asian else '-', asian['live_wa'] if asian else '-',
+            '(' + str(len(ouzhi.get('jc',[]))) + ')' if ouzhi else '无'))
+    time.sleep(0.3)
 
-            log.warn(f"[step8] 解析异常")
-    # Get ouzhi (优先缓存)
-    ouzhi = None
-    cj = _from_cache(fid, 'jc')
-    ci = _from_cache(fid, 'iw')
-    ca2 = _from_cache(fid, 'av')
-    if cj and ci and ca2:
-        ouzhi = {'jc': cj, 'iw': ci, 'av': ca2, 'all': None}
-    if not ouzhi:
+# ============ 获取百家欧赔数据（Step 19-23） ============
+print()
+log.info('获取百家欧赔数据 ({} 场)...'.format(len(league_matches)))
+step19_data = []
+for i, m in enumerate(league_matches, 1):
+    fid = m.get('fid', '')
+    if not fid: continue
+    # 使用缓存数据
+    cached_ok = False
+    if _loaded_from_cache:
+        oe = m.get('odds_europe') if isinstance(m.get('odds_europe'), dict) else None
+        if not oe or not oe.get('jc') or not oe.get('companies'):
+            log.warning('  [SKIP] #{} fid={}: 缓存数据不全, 跳过(无HTTP回退)'.format(i, fid))
+            continue
+        try:
+            jc_raw = oe['jc']
+            jc = {k: '{:.2f}'.format(float(jc_raw.get(k,0))) for k in ['iw','id','il','lw','ld','ll']}
+            # iw: find 威廉希尔
+            iw = None
+            for c in oe.get('companies', []):
+                if '威' in c.get('name',''):
+                    iw = {k: '{:.2f}'.format(c[k2][i]) for k, k2, i in [('iw','init',0),('id','init',1),('il','init',2),('lw','live',0),('ld','live',1),('ll','live',2)]}
+                    break
+            # av
+            av = None
+            if oe.get('av'):
+                av = {k: '{:.2f}'.format(float(oe['av'].get(k,0))) for k in ['iw','id','il','lw','ld','ll']}
+            # all_companies
+            all_companies = []
+            for idx, c in enumerate(oe.get('companies', []), 1):
+                all_companies.append({'row': str(idx), 'name': c.get('name','')})
+                all_companies[-1].update({k: '{:.2f}'.format(c[k2][i]) for k, k2, i in [('iw','init',0),('id','init',1),('il','init',2),('lw','live',0),('ld','live',1),('ll','live',2)]})
+            step19_data.append({**m, 'ouzhi': {'jc': jc, 'iw': iw, 'av': av, 'all': all_companies}})
+            log.info('  #{} fid={}: {} vs {} (缓存) 公司数={}'.format(i, fid, m['home'], m['away'], len(all_companies)))
+            cached_ok = True
+        except Exception as e:
+            log.warning('  [SKIP] #{} fid={}: 缓存数据异常, 跳过: {}'.format(i, fid, e))
+            continue
+    else:
+        # 只有没加载缓存时才走HTTP
+
+        # 缓存不行才走HTTP
         try:
             r = sess.get('https://odds.500.com/fenxi/ouzhi-{}.shtml'.format(fid), timeout=10)
             r.encoding = 'gbk'
@@ -467,7 +529,6 @@ for i, m in enumerate(handicap_matches[:15], 1):
                         val = clean_text(tds[idx].get_text())
                         try: nums.append(float(val))
                         except:
-
                             log.warn(f"[step8] 解析异常")
                     if len(nums) < 6: continue
                     company = {
@@ -479,59 +540,11 @@ for i, m in enumerate(handicap_matches[:15], 1):
                     if td0 == '1': jc = company
                     elif td0 == '6': iw = company
                     elif '\u767e' in td1 or '\u5e73' in td1: av = company
-            ouzhi = {'jc': jc, 'iw': iw, 'av': av, 'all': all_companies}
+            step19_data.append({**m, 'ouzhi': {'jc': jc, 'iw': iw, 'av': av, 'all': all_companies}})
+            log.info('  #{} fid={}: {} vs {} (HTTP) 公司数={}'.format(i, fid, m['home'], m['away'], len(all_companies)))
         except:
-
-            log.warn(f"[step8] 解析异常")
-    if asian or ouzhi:
-        step8_data.append({**m, 'asian': asian, 'ouzhi': ouzhi})
-        log.info('  #{} fid={}: {} vs {} {} 亚盘={}({}/{}) 欧赔={}'.format(
-            i, fid, m['home'], m['away'], m['score'],
-            asian['live_pan'] if asian else '-', asian['live_wh'] if asian else '-', asian['live_wa'] if asian else '-',
-            '(' + str(len(ouzhi.get('jc',[]))) + ')' if ouzhi else '无'))
-    time.sleep(0.3)
-
-# ============ 获取百家欧赔数据（Step 19-23） ============
-print()
-log.info('获取百家欧赔数据 ({} 场)...'.format(len(league_matches)))
-step19_data = []
-for i, m in enumerate(league_matches, 1):
-    fid = m.get('fid', '')
-    if not fid: continue
-    try:
-        r = sess.get('https://odds.500.com/fenxi/ouzhi-{}.shtml'.format(fid), timeout=10)
-        r.encoding = 'gbk'
-        soup = BeautifulSoup(r.text, 'html.parser')
-        jc = iw = av = None
-        all_companies = []
-        for table in soup.find_all('table'):
-            for tr in table.find_all('tr'):
-                tds = tr.find_all('td')
-                if len(tds) < 12: continue
-                td0 = tds[0].get_text().strip()
-                td1 = tds[1].get_text().strip()
-                nums = []
-                for idx in [3,4,5,6,7,8]:
-                    val = clean_text(tds[idx].get_text())
-                    try: nums.append(float(val))
-                    except:
-
-                        log.warn(f"[step8] 解析异常")
-                if len(nums) < 6: continue
-                company = {
-                    'row': td0, 'name': td1,
-                    'iw': '{:.2f}'.format(nums[0]), 'id': '{:.2f}'.format(nums[1]), 'il': '{:.2f}'.format(nums[2]),
-                    'lw': '{:.2f}'.format(nums[3]), 'ld': '{:.2f}'.format(nums[4]), 'll': '{:.2f}'.format(nums[5]),
-                }
-                all_companies.append(company)
-                if td0 == '1': jc = company
-                elif td0 == '6': iw = company
-                elif '\u767e' in td1 or '\u5e73' in td1: av = company
-        step19_data.append({**m, 'ouzhi': {'jc': jc, 'iw': iw, 'av': av, 'all': all_companies}})
-        log.info('  #{} fid={}: {} vs {} {} 公司数={}'.format(i, fid, m['home'], m['away'], m['score'], len(all_companies)))
-    except:
-        log.info('  #{} fid={}: 获取失败'.format(i, fid))
-    time.sleep(0.3)
+            log.info('  #{} fid={}: 获取失败'.format(i, fid))
+        time.sleep(0.3)
 
 # 当前比赛基准
 print()
@@ -738,7 +751,7 @@ bench_av_live = None
 if cur_av:
     bench_av_live = [cur_av['lw'], cur_av['ld'], cur_av['ll']]
     print()
-    log.info('百家基准即时盘: {}/{}'.format(bench_av_live[0], bench_av_live[1]), bench_av_live[2])
+    log.info('百家基准即时盘: {}/{}/{}'.format(bench_av_live[0], bench_av_live[1], bench_av_live[2]))
 
 # ---------- Step 19: 百家欧赔对比 ----------
 out.append('')
@@ -926,16 +939,15 @@ for i, m in enumerate(step19_data, 1):
                         val = clean_text(tds[idx].get_text())
                         try: nums.append(float(val))
                         except:
-
-                            log.warn(f"[step8] 解析异常")
+                            # 非赔率列（概率/返还率），跳过
+                            pass
                     if len(nums) >= 6:
                         jc_rq = {'iw': '{:.2f}'.format(nums[0]), 'id': '{:.2f}'.format(nums[1]), 'il': '{:.2f}'.format(nums[2]),
                                  'lw': '{:.2f}'.format(nums[3]), 'ld': '{:.2f}'.format(nums[4]), 'll': '{:.2f}'.format(nums[5])}
                         break
                 if jc_rq: break
-        except:
-
-            log.warn(f"[step8] 解析异常")
+        except Exception as e:
+            log.warning(f'[step8] 让球HTTP失败 fid={fid}: {e}')
     if jc_rq:
         step19_with_rq.append({**m, 'jc_rq': jc_rq})
     time.sleep(0.2)

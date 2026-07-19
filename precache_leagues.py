@@ -20,6 +20,13 @@ TASKS_DIR = os.path.join(SCRIPT_DIR, 'tasks')
 CACHE_DIR = os.path.join(SCRIPT_DIR, 'data', 'league_cache')
 CACHE_TTL_DAYS = 3
 
+# 加载dead FIDs（无赔率数据的比赛，采集时跳过）
+DEAD_FIDS = set()
+_dead_fids_path = os.path.join(SCRIPT_DIR, 'dead_fids.txt')
+if os.path.exists(_dead_fids_path):
+    with open(_dead_fids_path) as _f:
+        DEAD_FIDS = set(line.strip() for line in _f if line.strip())
+
 sess = requests.Session()
 sess.headers.update({
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -148,7 +155,7 @@ def _scrape_league_matches(league, team_ids, is_cup):
                 match_list = _fetch_team_matches_ajax(tid)
                 for m in match_list:
                     fid = str(m.get('FIXTUREID', ''))
-                    if fid and fid not in seen_fid:
+                    if fid and fid not in seen_fid and fid not in DEAD_FIDS:
                         seen_fid.add(fid)
                         all_matches.append(m)
                         team_set.add(str(m.get('HOMETEAMID', '')))
@@ -169,7 +176,7 @@ def _scrape_league_matches(league, team_ids, is_cup):
                 match_list = _fetch_team_matches_ajax(tid)
                 for m in match_list:
                     fid = str(m.get('FIXTUREID', ''))
-                    if fid and fid not in seen_fid:
+                    if fid and fid not in seen_fid and fid not in DEAD_FIDS:
                         seen_fid.add(fid)
                         all_matches.append(m)
                         team_set.add(str(m.get('HOMETEAMID', '')))
@@ -321,7 +328,11 @@ def _fetch_match_odds(fid):
                 'dir':_odds_direction([c.get('iw',0),c.get('id',0),c.get('il',0)],
                     [c.get('lw',0),c.get('ld',0),c.get('ll',0)])} for c in companies[:10]]
         }
-    except: result['odds_europe'] = None
+    except Exception as e:
+        import traceback
+        print('[WARN] 欧赔抓取失败 FID={}: {} {}'.format(fid, type(e).__name__, str(e)[:100]))
+        traceback.print_exc()
+        result['odds_europe'] = None
     # 2. 让球
     try:
         url_rq = 'https://odds.500.com/fenxi/rangqiu-{}.shtml'.format(fid)
@@ -349,7 +360,11 @@ def _fetch_match_odds(fid):
                     break
                 if result.get('odds_handicap'): break
             if result.get('odds_handicap'): break
-    except: result['odds_handicap'] = None
+    except Exception as e:
+        import traceback
+        print('[WARN] 让球抓取失败 FID={}: {} {}'.format(fid, type(e).__name__, str(e)[:100]))
+        traceback.print_exc()
+        result['odds_handicap'] = None
     # 3. 亚盘
     try:
         url_yz = 'https://odds.500.com/fenxi/yazhi-{}.shtml'.format(fid)
@@ -390,7 +405,11 @@ def _fetch_match_odds(fid):
                 if len(yz_list) >= 3: break
             if len(yz_list) >= 3: break
         result['odds_asian'] = yz_list if yz_list else None
-    except: result['odds_asian'] = None
+    except Exception as e:
+        import traceback
+        print('[WARN] 亚盘抓取失败 FID={}: {} {}'.format(fid, type(e).__name__, str(e)[:100]))
+        traceback.print_exc()
+        result['odds_asian'] = None
     return result
 
 def _enrich_cache(cache_path, max_workers=20):
@@ -402,8 +421,15 @@ def _enrich_cache(cache_path, max_workers=20):
         cache_data = json.load(f)
     league = cache_data.get('league', '?')
     matches = cache_data.get('all_matches', [])
-    to_enrich = [str(m.get('FIXTUREID','')) for m in matches 
-                 if str(m.get('FIXTUREID','')) and not m.get('odds_europe')]
+    to_enrich = []
+    for m in matches:
+        fid = str(m.get('FIXTUREID',''))
+        if not fid or fid in DEAD_FIDS:
+            continue
+        oe = m.get('odds_europe')
+        # 如果没有 odds_europe，或者有但全是空值(如404页面)，需富集
+        if not oe or (isinstance(oe, dict) and not any(oe.get(k) for k in ('jc','iw','av'))):
+            to_enrich.append(fid)
     if not to_enrich:
         print('[ENRICH] {}: 没有需要富集的比赛'.format(league))
         return True
@@ -416,7 +442,9 @@ def _enrich_cache(cache_path, max_workers=20):
             try:
                 enriched[fid] = fut.result()
                 completed += 1
-            except: errors += 1
+            except Exception as e:
+                errors += 1
+                print('[WARN] FID={} 富集失败: {} {}'.format(fid, type(e).__name__, str(e)[:120]))
             if (completed + errors) % 20 == 0:
                 print('[ENRICH] {}: {}/{} (失败{})'.format(league, completed+errors, len(to_enrich), errors))
     updated = 0
@@ -440,7 +468,47 @@ def _enrich_cache(cache_path, max_workers=20):
     with open(cache_path, 'w', encoding='utf-8') as f:
         json.dump(cache_data, f, ensure_ascii=False, indent=2)
     print('[ENRICH] {}: 富集完成，{}场更新 (成功{}/失败{})'.format(league, updated, completed, errors))
+    # 后验证
+    _verify_enrich_quality(cache_path, league)
     return True
+
+
+def _verify_enrich_quality(cache_path, league='?'):
+    """富集完成后验证数据完整性，缺失超过阈值则FLAG"""
+    try:
+        with open(cache_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        matches = data.get('all_matches', [])
+        if not matches:
+            return
+        total = len(matches)
+        fields = [
+            ('odds_europe', '百家欧赔'),
+            ('odds_handicap', '竞彩让球指数'),
+            ('odds_asian', '亚盘'),
+        ]
+        for field, name in fields:
+            missing_fids = []
+            for m in matches:
+                if not m.get(field):
+                    fid = m.get('FIXTUREID', '?')
+                    date = m.get('MATCHDATE', '')
+                    home = m.get('HOMETEAMSXNAME', '?')
+                    away = m.get('AWAYTEAMSXNAME', '?')
+                    missing_fids.append((fid, date, home, away))
+            count = len(missing_fids)
+            pct = count * 100.0 / total
+            if count > 0:
+                flag = '⚠️' if pct <= 5 else '❌'
+                print('[{}] {} {}: 缺{}场({:.1f}%)'.format(flag, league, name, count, pct))
+                for fid, date, home, away in missing_fids[:10]:
+                    print('  → {} ({}) {} vs {}'.format(fid, date, home, away))
+                if len(missing_fids) > 10:
+                    print('  → ... 还有{}场'.format(len(missing_fids) - 10))
+            else:
+                print('[✓] {} {}: 完整({}场全有)'.format(league, name, total))
+    except Exception as e:
+        print('[WARN] 验证失败: {} {}'.format(type(e).__name__, str(e)[:100]))
 
 def _add_computed_fields(league_filtered):
     """为缓存中的每场比赛添加计算结果字段"""
@@ -536,6 +604,8 @@ def main():
                     json.dump(cache_data, f, ensure_ascii=False, indent=2)
                 print('[PRECACHE] {}: {}场（{}场有比分）→ 缓存 ✓'.format(
                     league, len(league_filtered), with_scores))
+                # 增量富集新比赛的赔率数据
+                _enrich_cache(cache_path)
             except Exception as e:
                 print('[PRECACHE] {}: 爬取失败: {}'.format(league, e))
             finally:
