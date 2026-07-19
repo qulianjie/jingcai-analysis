@@ -96,15 +96,16 @@ class CachedSession:
         # 缓存命中
         if _is_fresh(meta_path, self.ttl):
             try:
-                with open(html_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
+                # 读原始字节，返回给调用方自己解码
+                with open(html_path, 'rb') as f:
+                    content_bytes = f.read()
                 with open(meta_path, 'r') as f:
                     meta = json.load(f)
                 # 构造假的 Response 对象
                 resp = requests.Response()
                 resp.status_code = 200
-                resp._content = content.encode('utf-8')
-                resp.encoding = meta.get('encoding', 'utf-8')
+                resp._content = content_bytes
+                resp.encoding = meta.get('content_encoding') or meta.get('encoding', 'utf-8')
                 resp.url = url
                 resp.headers['Content-Type'] = 'text/html'
                 # 增加扩展属性标识缓存来源
@@ -116,15 +117,17 @@ class CachedSession:
 
         # 回源
         resp = self._session.get(url, **kwargs)
-        if resp.status_code == 200 and resp.text:
+        if resp.status_code == 200 and resp.content:
             os.makedirs(CACHE_DIR, exist_ok=True)
-            with open(html_path, 'w', encoding='utf-8') as f:
-                f.write(resp.text)
+            # 存原始字节，不存解码文本（避免编码猜测导致乱码）
+            with open(html_path, 'wb') as f:
+                f.write(resp.content)
             meta = {
                 'url': url,
                 'cached_at': time.time(),
                 'status': resp.status_code,
                 'encoding': resp.encoding,
+                'content_encoding': resp.apparent_encoding or resp.encoding,
             }
             with open(meta_path, 'w') as f:
                 json.dump(meta, f)
