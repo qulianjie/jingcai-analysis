@@ -5,9 +5,8 @@ const path = require('path');
 const { execSync } = require('child_process');
 const log = require('./_log_util.js');
 const nv = require('./_notion_verify.js');
-// FIX: c-ares can't reach link-local IPv6 DNS from WSL-bridged Windows Node
+// DNS: use system defaults (custom servers cause ECONNRESET on Windows Node via WSL bridge)
 const dns = require('dns');
-dns.setServers(['208.67.222.222', '8.8.8.8', '1.1.1.1']);
 dns.setDefaultResultOrder('ipv4first');
 log.setLogDir(path.join(__dirname, 'tasks', new Date().toISOString().slice(0,10), 'logs'));
 
@@ -272,7 +271,6 @@ async function fetchMatchResults(dateStr) {
     return new Promise((resolve) => {
         const url = `https://trade.500.com/jczq/?playid=269&g=2&date=${dateStr}`;
         https.get(url, {
-            family: 4,
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 'Accept': 'text/html,application/xhtml+xml',
@@ -342,7 +340,6 @@ function queryNotionMatches(dateStr) {
             hostname: 'api.notion.com',
             path: `/v1/databases/${DB_ID}/query`,
             method: 'POST',
-            family: 4,
             headers: {
                 'Authorization': 'Bearer ' + API_KEY,
                 'Notion-Version': '2022-06-28',
@@ -373,7 +370,6 @@ function notionPatch(pageId, props) {
             hostname: 'api.notion.com',
             path: `/v1/pages/${pageId}`,
             method: 'PATCH',
-            family: 4,
             headers: {
                 'Authorization': 'Bearer ' + API_KEY,
                 'Notion-Version': '2022-06-28',
@@ -484,7 +480,6 @@ function updateMatch(pageId, score, result, isCorrect, pred, handicap, rqPred, e
             hostname: 'api.notion.com',
             path: `/v1/pages/${pageId}`,
             method: 'PATCH',
-            family: 4,
             headers: {
                 'Authorization': 'Bearer ' + API_KEY,
                 'Notion-Version': '2022-06-28',
@@ -1075,6 +1070,8 @@ async function main() {
     
     let updated = 0;
     let skipped = 0;
+    let jcCorrect = 0, jcTotal = 0;
+    let rqCorrect = 0, rqTotal = 0;
     
     for (const page of notionPages) {
         const props = page.properties;
@@ -1153,7 +1150,26 @@ async function main() {
         console.log(`   比分: ${score} (${actualResult})`);
         console.log(`   预测: ${pred} → ${predResult || '未知'}`);
         console.log(`   正确: ${isCorrect ? '✅' : '❌'}`);
-        
+
+        // 让球预测正确性
+        const rqPredResult = rqPred ? predictionToResult(rqPred) : null;
+        let rqIsCorrectForStats = null;
+        if (rqPred && rqPredResult) {
+            const adjHome = result.homeScore - handicap;
+            let rqActual;
+            if (adjHome > result.awayScore) rqActual = '胜';
+            else if (adjHome < result.awayScore) rqActual = '负';
+            else rqActual = '平';
+            rqIsCorrectForStats = (rqPredResult === rqActual);
+        }
+
+        jcTotal++;
+        if (isCorrect) jcCorrect++;
+        if (rqIsCorrectForStats !== null) {
+            rqTotal++;
+            if (rqIsCorrectForStats) rqCorrect++;
+        }
+
         // 更新 Notion
         try {
             const matchFinalOdds = finalOdds[matchNum] || null;
@@ -1179,6 +1195,18 @@ async function main() {
         await nv.verifyAfterUpload(targetDate, DB_ID, API_KEY, null);
     } catch(e) {
         console.log(`[WARN] 上传后核查异常: ${e.message}`);
+    }
+
+    // 当天准确率汇总
+    console.log('');
+    console.log('📊 当天准确率');
+    if (jcTotal > 0) {
+        const jcRate = ((jcCorrect / jcTotal) * 100).toFixed(1);
+        console.log(`   竞彩预测：${jcCorrect}正确 / ${jcTotal}场 = ${jcRate}%`);
+    }
+    if (rqTotal > 0) {
+        const rqRate = ((rqCorrect / rqTotal) * 100).toFixed(1);
+        console.log(`   让球预测：${rqCorrect}正确 / ${rqTotal}场 = ${rqRate}%`);
     }
 
     // 4. 生成分组统计并写入Notion
