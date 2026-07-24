@@ -330,9 +330,14 @@ def main():
                 return '缺'
             return f'{LAB[idx]}{r[0]:.1f}x'
 
-        jc_min_str = f'{jc_min:.2f}({rlabel2(jc_r, jc_min_idx)})' if jc_min is not None else '缺'
-        iw_min_str = f'{iw_min:.2f}({rlabel2(iw_r, iw_min_idx)})' if iw_min is not None else '缺'
-        print(f'澳门={macau_lp}({macau_val}) 百:{rlabel2(av_r, av_min_idx)} 竞:{jc_min_str} IW:{iw_min_str}')
+        def full_odds_label(odds, r, idx):
+            """格式：胜2.96/平3.37/负2.24(负2.2x)"""
+            if not odds: return '缺'
+            return f'胜{odds[0]:.2f}/平{odds[1]:.2f}/负{odds[2]:.2f}({rlabel2(r, idx)})'
+        av_label = full_odds_label(av_live, av_r, av_min_idx)
+        jc_label = full_odds_label(jc_live, jc_r, jc_min_idx) if jc_live else '缺'
+        iw_label = full_odds_label(iw_live, iw_r, iw_min_idx) if iw_live else '缺'
+        print(f'澳门={macau_lp}({macau_val}) 百:{av_label} 竞:{jc_label} IW:{iw_label}')
 
         # 加载缓存
         fp = find_cache(league)
@@ -408,7 +413,17 @@ def main():
             })
 
         hits.sort(key=lambda x: x['date'])
-        print(f'  📊 {len(hits)}场匹配')
+        # 统计汇总
+        cnt = Counter()
+        for h in hits:
+            r = h.get('result', '')
+            if '主胜' in r: cnt['主胜'] += 1
+            elif '客胜' in r: cnt['客胜'] += 1
+            elif '平' in r: cnt['平局'] += 1
+            else: cnt['其他'] += 1
+        total = len(hits)
+        stats = '|'.join(f'{res}:{c}({c*100//total}%)' for res, c in sorted(cnt.items()))
+        print(f'  📊 {total}场（{stats}）')
         for h in hits:
             ri = {'主胜': '✅', '平局': '➖', '客胜': '❌'}.get(h.get('result', ''), '')
             # 计算每家公司最小值标签
