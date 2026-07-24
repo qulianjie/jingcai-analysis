@@ -194,8 +194,8 @@ def ext_hist(hm):
  oa=hm.get('odds_asian',[])
  if oa:
   for item in oa:
-   if'门'in item.get('name','')or item==oa[0]:
-    asn={'lp':item.get('live_pan',''),'lh':item.get('live_water_high',''),'ll':item.get('live_water_low','')};break
+   if'门'in item.get('name','')or item==oa[0]:\
+    asn={'ip':item.get('init_pan',''),'lp':item.get('live_pan',''),'lh':item.get('live_water_high',''),'ll':item.get('live_water_low','')};break
  return av,jc,hc,asn
 
 def _get_iw_dir_companies(cs):
@@ -219,7 +219,7 @@ def sr(hist,tod):
  tv={}
  # 让球：优先jc(竞彩让球), 没有则用iw(IW让球)
  _hc=hc if hc.get('dir') else hc_iw
- tv['av_dir']=av.get('dir','');tv['iw_dir']=tod.get('iw_dir','');tv['as_pan']=asn.get('lp','')
+ tv['av_dir']=av.get('dir','');tv['jc_dir']=jc.get('dir','');tv['iw_dir']=tod.get('iw_dir','');tv['as_pan']=asn.get('lp','');tv['as_ip']=asn.get('ip','')
  tv['hc_dir']=_hc.get('dir','');tv['hc_src']='竞' if hc.get('dir') else ('IW' if hc_iw.get('dir') else '-')
  if av.get('lw'):tv['av_w']=rk(av['lw'])
  if av.get('ld'):tv['av_d']=rk(av['ld'])
@@ -293,7 +293,7 @@ def sr(hist,tod):
    'av':{'lw':ha.get('lw'),'ld':ha.get('ld'),'ll':ha.get('ll'),'dir':ha.get('dir')},
    'jc':{'lw':hj.get('lw'),'ld':hj.get('ld'),'ll':hj.get('ll'),'dir':hj.get('dir')},
    'hc':{'lw':hh.get('lw'),'ld':hh.get('ld'),'ll':hh.get('ll'),'dir':hh.get('dir'),'src':hh.get('src','')},
-   'asn':{'lp':ha2.get('lp'),'lh':ha2.get('lh'),'ll':ha2.get('ll')},
+   'asn':{'ip':ha2.get('ip',''),'lp':ha2.get('lp',''),'lh':ha2.get('lh',''),'ll':ha2.get('ll')},
    'iwd':{'dir':_get_iw_dir_companies(oe.get('companies',[])),'odds':_get_iw_odds_companies(oe.get('companies',[]))},
    'td':{'iw_dir':tod.get('iw_dir',''),'as_pan':tod.get('as','').get('lp','') if isinstance(tod.get('as'),dict) else ''}}
   if mc not in groups:groups[mc]=[]
@@ -315,74 +315,100 @@ def pr(rs):
  print(f'# 竞彩盘路一致性\n{now}\n')
  for rank,(m,res)in enumerate(rs,1):
   if res is None:
-   print(f'**{rank}. {m["home"]}vs{m["away"]}** | 无缓存 | {m.get("league","")}\n')
+   print(f'{rank}. {m["home"]}vs{m["away"]} | 无缓存 | {m.get("league","")}\n')
    continue
   tv=res.get('today',{})
-  print(f'**{rank}. {m["home"]}vs{m["away"]}** | 3先决+{res.get("groups",[])[0]["cnt"] if res.get("groups") else 0}/13剩余 | {m.get("league","")}')
-  print(f'缓存:{res.get("hl","?")}({res.get("ht",0)}场, 3先决:{res.get("prereq_cnt",0)}场)')
+  cnt=res.get("groups",[])[0]["cnt"]if res.get("groups")else 0
+  print(f'{"═"*60}')
+  print(f'{rank}. {m["home"]} vs {m["away"]} | 3先决+{cnt}/13维 | {m.get("league","")}')
+  print(f'缓存:{res.get("hl","?")}({res.get("ht",0)}场, 先决通过:{res.get("prereq_cnt",0)}场)')
+
   # 3先决明细
   pml=res.get('prereq_ml',[])
   if pml:
-   print(f'  📌3先决比赛:')
+   print(f'  先决比赛({len(pml)}场):')
    for hm2 in pml:
     ri={'主胜':'✅','平局':'➖','客胜':'❌'}.get(hm2.get('result',''),'')
-    dt=hm2.get('date','');hn=hm2.get('home','');an=hm2.get('away','');sc=hm2.get('score','')
-    sec_result=f'{sc}{ri}'if sc!=':'else ri
-    print(f'    {hn}vs{an} {sec_result} ({dt})')
+    sc=hm2.get('score','')
+    print(f'    [{hm2.get("date","")[:10]}] {hm2.get("home","")} vs {hm2.get("away","")}  {sc}{ri}')
+
+  # 当天明细
+  print(f'  当天:')
+  def today_min_lbl(w,d,l):
+   """计算当天最小值标签 如 负2.20"""
+   try:
+    vals=[float(v)for v in[w,d,l]if v is not None and v!='-']
+    if not vals:return'缺'
+    idx=[float(v)if v is not None and v!='-'else 999 for v in[w,d,l]].index(min(vals))
+    mn=min(vals)
+    return f'{["胜","平","负"][idx]}{mn:.2f}'
+   except:return'缺'
+  av_lbl=today_min_lbl(tv.get('av_w'),tv.get('av_d'),tv.get('av_l'))
+  jc_lbl=today_min_lbl(tv.get('jc_w'),tv.get('jc_d'),tv.get('jc_l'))
+  iw_lbl=today_min_lbl(tv.get('iw_w'),tv.get('iw_d'),tv.get('iw_l'))
+  print(f'    百家 {tv.get("av_dir","-")} 终:{tv.get("av_w","-")}/{tv.get("av_d","-")}/{tv.get("av_l","-")}  ←{av_lbl}')
+  print(f'    竞彩 {tv.get("jc_dir","-")} 终:{tv.get("jc_w","-")}/{tv.get("jc_d","-")}/{tv.get("jc_l","-")}  ←{jc_lbl}')
+  print(f'    IW   {tv.get("iw_dir","-")} 终:{tv.get("iw_w","-")}/{tv.get("iw_d","-")}/{tv.get("iw_l","-")}  ←{iw_lbl}')
+  hcs=tv.get('hc_src','竞')
+  print(f'    让球({hcs}):{tv.get("hc_dir","-")}  终:{tv.get("hc_w","-")}/{tv.get("hc_d","-")}/{tv.get("hc_l","-")}')
+  as_ip=tv.get('as_ip','');as_lp=tv.get('as_pan','')
+  print(f'    亚盘 {as_ip} → {as_lp}')
   print()
-  # today dimensions
-  print('📋当天:')
-  print(f'  盘路: 百{tv.get("av_dir","-")} | IW{tv.get("iw_dir","-")} | 让{tv.get("hc_dir","-")}')
-  print(f'  澳门: {tv.get("as_pan","-")}')
-  avw=tv.get('av_w','-');avd=tv.get('av_d','-');avl=tv.get('av_l','-')
-  print(f'  百家: {avw}/{avd}/{avl}')
-  jcw=tv.get('jc_w','-');jcd=tv.get('jc_d','-');jcl=tv.get('jc_l','-')
-  print(f'  竞彩: {jcw}/{jcd}/{jcl}')
-  hcw=tv.get('hc_w','-');hcd=tv.get('hc_d','-');hcl=tv.get('hc_l','-');hcs=tv.get('hc_src','')
-  print(f'  让球({hcs}): {hcw}/{hcd}/{hcl}')
-  iww=tv.get('iw_w','-');iwd=tv.get('iw_d','-');iwl=tv.get('iw_l','-')
-  print(f'  IW赔率: {iww}/{iwd}/{iwl}')
-  print()
+
   # matched groups
   for g in res.get('groups',[]):
-   cnt=g['cnt'];ms=g['matches'];td=g['td']
-   print(f'📅 {cnt}/13维 ({len(ms)}场)')
+   cnt=g['cnt'];ms=g['matches']
+   # 统计
+   rc=Counter()
+   for hm in ms:
+    r=hm.get('result','')
+    if'主胜'in r:rc['主胜']+=1
+    elif'客胜'in r:rc['客胜']+=1
+    elif'平'in r:rc['平局']+=1
+   n=len(ms)
+   stats='|'.join(f'{k}:{v}({v*100//n}%)'for k,v in sorted(rc.items()))
+   print(f'  📊 {cnt}/13维 ({n}场) {stats}')
    for hm in ms:
     ri={'主胜':'✅','平局':'➖','客胜':'❌'}.get(hm.get('result',''),'')
-    dt=hm.get('date','');hmn=hm.get('home','');awn=hm.get('away','')
-    sc=hm.get('score','')
-    print(f'  {hmn}vs{awn} {sc}{ri} ({dt})')
-    # per-dimension lines
     mk=hm.get('mk',[])
-    av=hm.get('av',{});jc=hm.get('jc',{});hc=hm.get('hc',{});asn=hm.get('asn',{});iwd=hm.get('iwd',{});td=hm.get('td',{})
-    # direction line
-    def nz(v,d='-'):return d if v is None else str(v)
-    ad=nz(av.get('dir'));id_=nz(iwd.get('dir'));hd=nz(hc.get('dir'))
-    print(f'    盘路: 百{ad}✓ | IW{id_}✓ | 让{hd}{"✓" if "hc_dir" in mk else ""}')
-    # asian pan
-    ap=nz(asn.get('lp'))
-    print(f'    澳门: {ap}✓')
-    # av values
-    def vv(d,k):
-     v=d.get(k)
-     if v is None:return'-'
-     return f'{v:.2f}'if isinstance(v,float)else str(v)
-    aw=vv(av,'lw');ad2=vv(av,'ld');al=vv(av,'ll')
-    awm='✓'if'av_w'in mk else'';adm='✓'if'av_d'in mk else'';alm='✓'if'av_l'in mk else''
-    print(f'    百家: {aw}{awm}/{ad2}{adm}/{al}{alm}')
-    jw=vv(jc,'lw');jd2=vv(jc,'ld');jl=vv(jc,'ll')
-    jwm='✓'if'jc_w'in mk else'';jdm='✓'if'jc_d'in mk else'';jlm='✓'if'jc_l'in mk else''
-    print(f'    竞彩: {jw}{jwm}/{jd2}{jdm}/{jl}{jlm}')
-    # IW终赔
+    print(f'  [{hm.get("date","")[:10]}] {hm.get("home","")} vs {hm.get("away","")}  {hm.get("score","-")} {ri}')
+    av=hm.get('av',{});jc=hm.get('jc',{});hc=hm.get('hc',{});asn=hm.get('asn',{});iwd=hm.get('iwd',{})
+    # 百家（有数据就显示）
+    def o3(d):
+     if not d:return'-/-/-'
+     w=d.get('lw','-');l=d.get('ld','-');ll=d.get('ll','-')
+     if w is None:return'-/-/-'
+     w=float(w)if not isinstance(w,str)else-1
+     l=float(l)if not isinstance(l,str)else-1
+     ll=float(ll)if not isinstance(ll,str)else-1
+     return f'{w:.2f}/{l:.2f}/{ll:.2f}'
+    def min_lbl(d):
+     if not d:return'缺'
+     try:
+      vals=[float(d.get(k))for k in['lw','ld','ll']if d.get(k)is not None]
+      if not vals:return'缺'
+      idx=[float(d.get(k,999))for k in['lw','ld','ll']].index(min(vals))
+      return f'{["胜","平","负"][idx]}{min(vals):.2f}'
+     except:return'缺'
+    def mk_check(dim_keys):
+     """检查哪些维度匹配上了"""
+     return''# 只显示方向箭头和数值，✓标记去掉以保持干净
+    ad=av.get('dir','-')
+    print(f'    百家 {ad} 终:{o3(av)}  ←{min_lbl(av)}')
+    jd=jc.get('dir','-')
+    print(f'    竞彩 {jd} 终:{o3(jc)}  ←{min_lbl(jc)}')
     iw_odds=iwd.get('odds',{})
     if iw_odds:
-     iww=vv(iw_odds,'lw');iwd2=vv(iw_odds,'ld');iwl=vv(iw_odds,'ll')
-     iwm='✓'if'iw_w'in mk else'';iwdm='✓'if'iw_d'in mk else'';iwlm='✓'if'iw_l'in mk else''
-     print(f'    IW赔率: {iww}{iwm}/{iwd2}{iwdm}/{iwl}{iwlm}')
-    hw=vv(hc,'lw');hd2=vv(hc,'ld');hl=vv(hc,'ll')
-    hwm='✓'if'hc_w'in mk else'';hdm='✓'if'hc_d'in mk else'';hlm='✓'if'hc_l'in mk else''
-    hcs=hc.get('src','')
-    print(f'    让球({hcs}): {hw}{hwm}/{hd2}{hdm}/{hl}{hlm}')
+     iwd_dir=iwd.get('dir','-')
+     print(f'    IW   {iwd_dir} 终:{o3(iw_odds)}  ←{min_lbl(iw_odds)}')
+    hc_src=hc.get('src','竞')
+    hcd=hc.get('dir','-')
+    print(f'    让球({hc_src}):{hcd}  终:{o3(hc)}')
+    as_ip=asn.get('ip','-').replace('↑','').replace('↓','').replace(' ','').strip()
+    as_lp=asn.get('lp','-').replace('↑','').replace('↓','').replace(' ','').strip()
+    if as_ip and as_ip!='-':
+     print(f'    亚盘 {as_ip} → {as_lp}')
+    print()
   print()
 
 if __name__=='__main__':

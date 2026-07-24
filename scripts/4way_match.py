@@ -610,11 +610,20 @@ def match_hist(cache, target_hc, jc_dir, iw_dir, iw_hc_dir=None, strict_jc=False
                 if item == oa[0]:
                     as_init = item.get('init_pan', '-')
                     as_live = item.get('live_pan', '-')
+        # 百家初终盘
+        av_init = av_live = '-'
+        oe_av = oe.get('av') if isinstance(oe, dict) else None
+        if isinstance(oe_av, dict):
+            if oe_av.get('iw') is not None:
+                av_init = f'{oe_av["iw"]}/{oe_av.get("id","?")}/{oe_av.get("il","?")}'
+            if oe_av.get('lw') is not None:
+                av_live = f'{oe_av["lw"]}/{oe_av.get("ld","?")}/{oe_av.get("ll","?")}'
         res.append({'date': m.get('MATCHDATE', ''), 'home': m.get('HOMETEAMSXNAME', ''),
                     'away': m.get('AWAYTEAMSXNAME', ''), 'score': sc, 'result': r,
                     'conds': '|'.join(conds),
                     'hist_jc': hist_jc or '-', 'hist_iw': hist_iw or '-',
                     'hist_hc_name': hist_hn or '-',
+                    'av_init': av_init, 'av_live': av_live,
                     'jc_init': jc_init, 'jc_live': jc_live,
                     'iw_init': iw_init, 'iw_live': iw_live,
                     'hc_dir': hc_dir, 'hc_init': hc_init, 'hc_live': hc_live,
@@ -636,37 +645,75 @@ def fmt(tm, hist, cache_info, jc_dir, iw_dir, macau_hc_val, macau_hc_name, hc_di
         lines.append('')
         return '\n'.join(lines)
 
+    def parse_odds(s):
+        if not s or s == '-': return None
+        try: return [float(x) for x in s.split('/')]
+        except: return None
+
+    def dir_change(init_str, live_str):
+        init = parse_odds(init_str)
+        live = parse_odds(live_str)
+        if not init or not live: return ''
+        d = []
+        for i in range(3):
+            if live[i] > init[i] + 0.01: d.append('⬆')
+            elif live[i] < init[i] - 0.01: d.append('⬇')
+            else: d.append('➡')
+        return ''.join(d)
+
+    def min_label(live_str):
+        odds = parse_odds(live_str)
+        if not odds: return '缺'
+        idx = odds.index(min(odds))
+        return f'{["胜","平","负"][idx]}{min(odds):.2f}'
+
+    def odds_line(label, init_str, live_str):
+        """单家公司明细行"""
+        d = dir_change(init_str, live_str)
+        ml = min_label(live_str)
+        if init_str == '-' or not init_str:
+            return f'    {label} 终:{live_str}  ←{ml}' if live_str != '-' else ''
+        return f'    {label} {d} 初:{init_str} → 终:{live_str}  ←{ml}'
+
     n = len(hist)
     cnt = Counter()
     for h in hist:
         r = h.get('result', '')
-        if '主胜' in r:
-            cnt['主胜'] += 1
-        elif '客胜' in r:
-            cnt['客胜'] += 1
-        elif '平' in r:
-            cnt['平'] += 1
-        else:
-            cnt[r or '未知'] += 1
+        if '主胜' in r: cnt['主胜'] += 1
+        elif '客胜' in r: cnt['客胜'] += 1
+        elif '平' in r: cnt['平'] += 1
+        else: cnt[r or '未知'] += 1
 
     lines.append(f'📊 {n}场{"|".join(f"{res}:{c}({c*100//n}%)" for res,c in sorted(cnt.items()))}')
     for h in hist[:30]:
         r = h.get('result', '')
-        tag = '✅' if '主胜' in r else ('✅' if '客胜' in r else ('➖' if '平' in r else '❓'))
-        iw = f"IW:{h.get('iw_init','-')}→{h.get('iw_live','-')}" if h.get('iw_init','-') != '-' else ''
-        jc = f"竞:{h.get('jc_init','-')}→{h.get('jc_live','-')}" if h.get('jc_init','-') != '-' else ''
-        hc = f"让:{h.get('hc_dir','-')} {h.get('hc_init','-')}→{h.get('hc_live','-')}" if h.get('hc_dir','-') != '-' else ''
-        asp = ''
-        if h.get('as_init','-') != '-':
-            ai = h['as_init'].replace('↑','').replace('↓','').replace(' ','').strip()
-            al = h['as_live'].replace('↑','').replace('↓','').replace(' ','').strip()
-            av = _match_hc_name(ai)
-            lv = _match_hc_name(al)
-            if av is not None and lv is not None:
-                asp = f"亚:{av}→{lv}"
-        conds = h.get('conds','')
-        lines.append(f'{h.get("date","")[:10]} {h.get("home","")[:10]}vs{h.get("away","")[:10]} {h.get("score","-")}{tag} {conds} {jc} {iw} {hc} {asp}'.rstrip())
-    lines.append('')
+        tag = '✅' if '主胜' in r else ('❌' if '客胜' in r else ('➖' if '平' in r else '❓'))
+        lines.append(f'  [{h.get("date","")[:10]}] {h.get("home","")} vs {h.get("away","")}  {h.get("score","-")} {tag}')
+
+        # 百家
+        av_i, av_l = h.get('av_init','-'), h.get('av_live','-')
+        if av_l != '-':
+            lines.append(odds_line('百家', av_i, av_l))
+        # 竞彩
+        jc_i, jc_l = h.get('jc_init','-'), h.get('jc_live','-')
+        if jc_l != '-':
+            lines.append(odds_line('竞彩', jc_i, jc_l))
+        # IW
+        iw_i, iw_l = h.get('iw_init','-'), h.get('iw_live','-')
+        if iw_l != '-':
+            lines.append(odds_line('IW', iw_i, iw_l))
+        # 让球
+        hc_d = h.get('hc_dir','-')
+        hc_i, hc_l = h.get('hc_init','-'), h.get('hc_live','-')
+        if hc_d != '-':
+            lines.append(f'    让球方向:{hc_d}  初:{hc_i} → 终:{hc_l}')
+        # 亚盘
+        as_i = h.get('as_init','-').replace('↑','').replace('↓','').replace(' ','').strip()
+        as_l = h.get('as_live','-').replace('↑','').replace('↓','').replace(' ','').strip()
+        if as_i != '-':
+            lines.append(f'    亚盘 {as_i} → {as_l}')
+        lines.append('')
+
     return '\n'.join(lines)
 
 
