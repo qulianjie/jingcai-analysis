@@ -126,7 +126,7 @@ def fo(fid):
     if n not in(1,2,3):continue
     nm=td[1].get_text().strip()
     # ref属性找盘口名
-    rc=[i for i in range(len(td))if td[i].get('ref')and __import__('re').match(r'^[\d.]+$',td[i].get('ref',''))]
+    rc=[i for i in range(len(td))if td[i].get('ref')and __import__('re').match(r'^-?[\d.]+$',td[i].get('ref',''))]
     if len(rc)<2:continue
     li,ii=(rc[0],rc[1])if jb else(rc[1],rc[0])
     cln=lambda t:t.replace(chr(160),'').replace('↑','').replace('↓','').replace('升','').replace('降','')
