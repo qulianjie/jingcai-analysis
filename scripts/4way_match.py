@@ -552,11 +552,11 @@ def match_hist(cache, target_hc, jc_dir, iw_dir, iw_hc_dir=None, strict_jc=False
             for item in oa:
                 if '门' in item.get('name', ''):
                     as_init = item.get('init_pan', '-')
-                    as_live = item.get('init_pan', '-')
+                    as_live = item.get('live_pan', '-')
                     break
                 if item == oa[0]:
                     as_init = item.get('init_pan', '-')
-                    as_live = item.get('init_pan', '-')
+                    as_live = item.get('live_pan', '-')
         res.append({'date': m.get('MATCHDATE', ''), 'home': m.get('HOMETEAMSXNAME', ''),
                     'away': m.get('AWAYTEAMSXNAME', ''), 'score': sc, 'result': r,
                     'conds': '|'.join(conds),

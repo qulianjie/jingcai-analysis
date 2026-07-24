@@ -371,6 +371,14 @@ def _fetch_match_odds(fid):
         resp3 = requests.get(url_yz, timeout=8, headers={'User-Agent': 'Mozilla/5.0'})
         resp3.encoding = 'gbk'
         soup3 = BeautifulSoup(resp3.text, 'html.parser')
+        # 从表头确认"即时盘口"和"初始盘口"的视觉顺序
+        jb = True
+        for t in soup3.find_all('table'):
+            for tr in t.find_all('tr'):
+                txt = [th.get_text(strip=True) for th in tr.find_all('th')]
+                if any('即时盘口' in t for t in txt) and any('初始盘口' in t for t in txt):
+                    jb = next((i for i, t in enumerate(txt) if '即时盘口' in t), 99) < next((i for i, t in enumerate(txt) if '初始盘口' in t), 99)
+                    break
         yz_list = []
         for table in soup3.find_all('table'):
             for tr in table.find_all('tr'):
@@ -379,27 +387,24 @@ def _fetch_match_odds(fid):
                 td0 = tds[0].get_text().strip()
                 if td0.isdigit() and int(td0) in (1, 2, 3):
                     name = tds[1].get_text().strip()
-                    iiw = il_text = iil = liw = ll_text = lil = ''
-                    for idx in range(len(tds)):
-                        val = tds[idx].get_text().strip().replace(chr(160), '')
-                        if idx == 3:
-                            m = __import__('re').search(r'([\d\.]+)', val)
-                            if m: iiw = m.group(1)
-                        elif idx == 4: il_text = val
-                        elif idx == 5:
-                            m = __import__('re').search(r'([\d\.]+)', val)
-                            if m: iil = m.group(1)
-                        elif idx == 9:
-                            m = __import__('re').search(r'([\d\.]+)', val)
-                            if m: liw = m.group(1)
-                        elif idx == 10: ll_text = val
-                        elif idx == 11:
-                            m = __import__('re').search(r'([\d\.]+)', val)
-                            if m: lil = m.group(1)
+                    # ref属性找盘口名
+                    rc = [i for i in range(len(tds)) if tds[i].get('ref') and re.match(r'^[\d.]+$', tds[i].get('ref', ''))]
+                    if len(rc) < 2: continue
+                    li, ii = (rc[0], rc[1]) if jb else (rc[1], rc[0])
+                    def _cln(t): return t.replace(chr(160), '').replace('↑','').replace('↓','').replace('升','').replace('降','')
+                    init_pan = _cln(tds[ii].get_text())
+                    live_pan = _cln(tds[li].get_text())
+                    try:
+                        ih = float(re.search(r'([\d.]+)', tds[li-1].get_text()).group(1))
+                        il = float(re.search(r'([\d.]+)', tds[li+1].get_text()).group(1))
+                        lh = float(re.search(r'([\d.]+)', tds[ii-1].get_text()).group(1))
+                        ll = float(re.search(r'([\d.]+)', tds[ii+1].get_text()).group(1))
+                    except:
+                        ih = il = lh = ll = ''
                     yz_list.append({
                         'name': name,
-                        'init_pan': il_text, 'init_water_high': iiw, 'init_water_low': iil,
-                        'live_pan': ll_text, 'live_water_high': liw, 'live_water_low': lil,
+                        'init_pan': init_pan, 'init_water_high': lh, 'init_water_low': ll,
+                        'live_pan': live_pan, 'live_water_high': ih, 'live_water_low': il,
                     })
                     if len(yz_list) >= 3: break
                 if len(yz_list) >= 3: break

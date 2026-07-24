@@ -138,11 +138,25 @@ def fix_match(fid):
     except:
         pass
     # 3. 亚盘页：澳门亚盘（前3家公司盘口）
+    # 使用ref属性+表头顺序定位，不依赖列号或关键字顺序
     try:
         url_yz = f'https://odds.500.com/fenxi/yazhi-{fid}.shtml'
         resp3 = sess.get(url_yz, timeout=10)
         resp3.encoding = 'gbk'
         soup3 = BeautifulSoup(resp3.text, 'html.parser')
+        # 从表头确认"即时盘口"和"初始盘口"的视觉顺序
+        def _find_header_order(soup):
+            for t in soup.find_all('table'):
+                for tr in t.find_all('tr'):
+                    texts = [th.get_text(strip=True) for th in tr.find_all('th')]
+                    has_jishi = any('即时盘口' in t for t in texts)
+                    has_chushi = any('初始盘口' in t for t in texts)
+                    if has_jishi and has_chushi:
+                        jishi_first = next((i for i, t in enumerate(texts) if '即时盘口' in t), 99)
+                        chushi_first = next((i for i, t in enumerate(texts) if '初始盘口' in t), 99)
+                        return jishi_first < chushi_first
+            return True
+        jishi_before_chushi = _find_header_order(soup3)
         yz_list = []
         for table in soup3.find_all('table'):
             for tr in table.find_all('tr'):
@@ -151,19 +165,24 @@ def fix_match(fid):
                 td0 = tds[0].get_text().strip()
                 if td0.isdigit() and int(td0) in (1, 2, 3):
                     name = tds[1].get_text().strip()
-                    # 动态找盘口列：通过关键字识别"半球""一球""平手"等，第一个是即时盘，第二个是初始盘
-                    def _cln(t): return t.replace(chr(160), '').replace('↑','').replace('↓','').replace('升','').replace('降','').replace(' ','').strip()
-                    live_pan = init_pan = None
-                    li = ii = -1
-                    for i in range(2, len(tds)):
-                        txt = _cln(tds[i].get_text())
-                        if not txt or re.match(r'^[\d.]+', txt): continue
-                        if any(k in txt for k in ('半球','一球','平手','球半','两球','三球','平半','半一')):
-                            if live_pan is None:
-                                live_pan = txt; li = i
-                            elif init_pan is None:
-                                init_pan = txt; ii = i; break
-                    if not live_pan or not init_pan: continue
+                    # 找有数值ref属性的td（盘口名列的唯一特征）
+                    ref_cells = []
+                    for i, td in enumerate(tds):
+                        ref = td.get('ref', '')
+                        if ref:
+                            try:
+                                float(ref)
+                                ref_cells.append(i)
+                            except: pass
+                    if len(ref_cells) < 2: continue
+                    # 按表头顺序分配
+                    if jishi_before_chushi:
+                        li, ii = ref_cells[0], ref_cells[1]
+                    else:
+                        ii, li = ref_cells[0], ref_cells[1]
+                    def _clean(t): return t.replace(chr(160), '').replace('↑','').replace('↓','').replace('升','').replace('降','')
+                    live_pan = _clean(tds[li].get_text())
+                    init_pan = _clean(tds[ii].get_text())
                     try:
                         ih = float(re.search(r'([\d.]+)', tds[li-1].get_text()).group(1))
                         il = float(re.search(r'([\d.]+)', tds[li+1].get_text()).group(1))
@@ -209,7 +228,7 @@ def fix_cache_file(cache_path, max_workers=10):
         if needs_av or needs_companies or needs_iw_hc or needs_jc_hc or needs_asian:
             to_fix.append((fid, needs_av, needs_companies, needs_iw_hc, needs_jc_hc, needs_asian))
     if not to_fix:
-        log(f'[✓] {league}: 全部完整，无需修复')
+        log(f'[OK] {league}: 全部完整，无需修复')
         return
     av_m = sum(1 for _, a, _, _, _, _ in to_fix if a)
     co_m = sum(1 for _, _, c, _, _, _ in to_fix if c)
@@ -217,7 +236,7 @@ def fix_cache_file(cache_path, max_workers=10):
     jc_hc_m = sum(1 for _, _, _, _, j, _ in to_fix if j)
     as_m = sum(1 for _, _, _, _, _, a in to_fix if a)
     log(f'[ENRICH] {league}: 需修复 {len(to_fix)}/{total} (百家{av_m}, companies{co_m}, IW让球{iw_m}, 竞彩让球{jc_hc_m}, 亚盘{as_m})')
-    
+
     fixed = {}
     errors = 0
     completed = 0
@@ -234,7 +253,7 @@ def fix_cache_file(cache_path, max_workers=10):
                     log(f'[WARN] FID={fid}: {type(e).__name__}: {str(e)[:100]}')
             if (completed + errors) % 20 == 0:
                 log(f'  {league}: {completed+errors}/{len(to_fix)} (失败{errors})')
-    
+
     updated = 0
     for m in matches:
         fid = str(m.get('FIXTUREID', ''))
@@ -268,11 +287,11 @@ def fix_cache_file(cache_path, max_workers=10):
         if r.get('asian_list') and not (isinstance(oa, list) and len(oa) > 0):
             m['odds_asian'] = r['asian_list']
             updated += 1
-    
+
     cache['enriched_date'] = datetime.now().strftime('%Y-%m-%d %H:%M')
     with open(cache_path, 'w', encoding='utf-8') as f:
         json.dump(cache, f, ensure_ascii=False, indent=2)
-    log(f'[✓] {league}: 完成，{updated}个字段更新 (成功{completed}/失败{errors})')
+    log(f'[OK] {league}: 完成，{updated}个字段更新 (成功{completed}/失败{errors})')
 
 if __name__ == '__main__':
     targets = []

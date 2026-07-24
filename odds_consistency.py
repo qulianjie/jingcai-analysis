@@ -102,10 +102,20 @@ def fo(fid):
      r['iw_odds']={'lw':n[3],'ld':n[4],'ll':n[5]}
      break
  except:pass
+# yazhi: 从表头确认"即时盘口"/"初始盘口"顺序, ref属性找盘口名
  try:
   url=f'https://odds.500.com/fenxi/yazhi-{fid}.shtml'
   x=sess.get(url,timeout=10);x.encoding='gbk'
   s=BeautifulSoup(x.text,'html.parser')
+  # 表头找即时/初始顺序
+  jb=True
+  for t in s.find_all('table'):
+   for tr in t.find_all('tr'):
+    txt=[th.get_text(strip=True)for th in tr.find_all('th')]
+    if any('即时盘口'in t for t in txt)and any('初始盘口'in t for t in txt):
+     jb=next((i for i,t in enumerate(txt)if'即时盘口'in t),99)<next((i for i,t in enumerate(txt)if'初始盘口'in t),99)
+     break
+   else:continue;break
   for t in s.find_all('table'):
    for tr in t.find_all('tr'):
     td=tr.find_all('td')
@@ -115,29 +125,17 @@ def fo(fid):
     n=int(t0)
     if n not in(1,2,3):continue
     nm=td[1].get_text().strip()
-    # 动态找盘口列：公司名(td1)之后, 第一个含"半球"/"一球"/"平手"/"球半"等盘口名的td
-    def _cln(t):return t.replace('↑','').replace('↓','').replace('升','').replace('降','').replace(' ','').replace(chr(160),'').strip()
-    live_pan=init_pan=None
-    for i in range(2,len(td)):
-     txt=_cln(td[i].get_text())
-     if not txt:continue
-     # 盘口关键字：含数字水位的先跳过
-     if re.match(r'^[\d.]+',txt):continue
-     # 是盘口名（含"半球""一球""平手""球半""受"等特征）
-     if any(k in txt for k in ('半球','一球','平手','球半','两球','三球','平半','半一')):
-      if live_pan is None:live_pan=txt  # 第一个是即时盘
-      elif init_pan is None:init_pan=txt;break  # 第二个是初始盘
-    if not live_pan or not init_pan:continue  # 找不到跳过
-    # 水位：在盘口名的前一位(high)和后一位(low)
-    lp=live_pan;ip=init_pan
+    # ref属性找盘口名
+    rc=[i for i in range(len(td))if td[i].get('ref')and __import__('re').match(r'^[\d.]+$',td[i].get('ref',''))]
+    if len(rc)<2:continue
+    li,ii=(rc[0],rc[1])if jb else(rc[1],rc[0])
+    cln=lambda t:t.replace(chr(160),'').replace('↑','').replace('↓','').replace('升','').replace('降','')
+    ip=cln(td[ii].get_text());lp=cln(td[li].get_text())
     try:
-     # 找盘口名在td中的位置
-     li=next(i for i in range(2,len(td)) if _cln(td[i].get_text())==live_pan)
-     ii=next(i for i in range(2,len(td)) if _cln(td[i].get_text())==init_pan)
-     ih=float(re.search(r'([\d.]+)',td[li-1].get_text()).group(1)) if li>2 else ''
-     il=float(re.search(r'([\d.]+)',td[li+1].get_text()).group(1)) if li+1<len(td) else ''
-     lh=float(re.search(r'([\d.]+)',td[ii-1].get_text()).group(1)) if ii>2 else ''
-     ll=float(re.search(r'([\d.]+)',td[ii+1].get_text()).group(1)) if ii+1<len(td) else ''
+     ih=float(re.search(r'([\d.]+)',td[li-1].get_text()).group(1))
+     il=float(re.search(r'([\d.]+)',td[li+1].get_text()).group(1))
+     lh=float(re.search(r'([\d.]+)',td[ii-1].get_text()).group(1))
+     ll=float(re.search(r'([\d.]+)',td[ii+1].get_text()).group(1))
     except:ih=il=lh=ll=''
     e={'name':nm,'ip':ip,'ih':lh,'il':ll,'lp':lp,'lh':ih,'ll':il}
     if'门'in nm or n==1:
