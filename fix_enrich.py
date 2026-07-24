@@ -22,7 +22,7 @@ def log(msg):
 
 CORE_LEAGUES = [
     'K1联赛.json',
-    '英超Premier League.json', '英超夏季赛.json',
+    '英超Premier League.json',
     '西甲La Liga.json', '德甲Bundesliga.json', '意甲Serie A.json',
     '法甲.json',
     '欧冠Champions League.json',
