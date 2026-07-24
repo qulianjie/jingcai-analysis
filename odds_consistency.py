@@ -129,7 +129,7 @@ def fo(fid):
     rc=[i for i in range(len(td))if td[i].get('ref')and __import__('re').match(r'^-?[\d.]+$',td[i].get('ref',''))]
     if len(rc)<2:continue
     li,ii=(rc[0],rc[1])if jb else(rc[1],rc[0])
-    cln=lambda t:t.replace(chr(160),'').replace('↑','').replace('↓','').replace('升','').replace('降','')
+    cln=lambda t:t.replace(chr(160),'').replace('↑','').replace('↓','').replace('升','').replace('降','').strip()
     ip=cln(td[ii].get_text());lp=cln(td[li].get_text())
     try:
      ih=float(re.search(r'([\d.]+)',td[li-1].get_text()).group(1))

@@ -180,7 +180,7 @@ def fix_match(fid):
                         li, ii = ref_cells[0], ref_cells[1]
                     else:
                         ii, li = ref_cells[0], ref_cells[1]
-                    def _clean(t): return t.replace(chr(160), '').replace('↑','').replace('↓','').replace('升','').replace('降','')
+                    def _clean(t): return t.replace(chr(160), '').replace('↑','').replace('↓','').replace('升','').replace('降','').strip()
                     live_pan = _clean(tds[li].get_text())
                     init_pan = _clean(tds[ii].get_text())
                     try:

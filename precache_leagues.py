@@ -391,7 +391,7 @@ def _fetch_match_odds(fid):
                     rc = [i for i in range(len(tds)) if tds[i].get('ref') and re.match(r'^-?[\d.]+$', tds[i].get('ref', ''))]
                     if len(rc) < 2: continue
                     li, ii = (rc[0], rc[1]) if jb else (rc[1], rc[0])
-                    def _cln(t): return t.replace(chr(160), '').replace('↑','').replace('↓','').replace('升','').replace('降','')
+                    def _cln(t): return t.replace(chr(160), '').replace('↑','').replace('↓','').replace('升','').replace('降','').strip()
                     init_pan = _cln(tds[ii].get_text())
                     live_pan = _cln(tds[li].get_text())
                     try:
