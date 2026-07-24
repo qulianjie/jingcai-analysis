@@ -259,7 +259,7 @@ def sr(hist,tod):
   ('iw_l',lambda hm:(lambda iw:rk(float(iw.get('ll')))if iw.get('ll')else None)(_get_iw_odds_companies(hm.get('odds_europe',{}).get('companies',[])))),
  ]
 
- groups={}
+ groups={};prereq_cnt=0;prereq_ml=[]
  for hm in ml:
   # 先决条件：3个维度全部精确匹配
   all_prereq_ok=True
@@ -271,6 +271,11 @@ def sr(hist,tod):
    hv=fn(hm)
    if hv is None or hv!=tv_v:all_prereq_ok=False;break
   if not all_prereq_ok:continue
+  prereq_cnt+=1
+  hm_entry={'date':hm.get('MATCHDATE',''),'home':hm.get('HOMETEAMSXNAME',''),'away':hm.get('AWAYTEAMSXNAME',''),
+   'result':hm.get('_computed',{}).get('match_result','')if hm.get('_computed')else'',
+   'score':f'{hm.get("HOMESCORE","")}:{hm.get("AWAYSCORE","")}'}
+  prereq_ml.append(hm_entry)
   # 剩余变量计数（不含先决条件），≥2才保留
   mc=0;mk=[]
   for key,fn in ext:
@@ -302,7 +307,7 @@ def sr(hist,tod):
    for k in e['mk']:dc[k]+=1
   td=[DN[DK.index(k)]for k,c in dc.most_common()if c>=len(ml2)*0.5]
   rg.append({'cnt':cnt,'matches':ml2,'td':td})
- return{'groups':rg,'today':tv,'ht':len(ml),'hl':hist['league']}
+ return{'groups':rg,'today':tv,'ht':len(ml),'hl':hist['league'],'prereq_cnt':prereq_cnt,'prereq_ml':prereq_ml}
 
 # phone-friendly print
 def pr(rs):
@@ -314,7 +319,16 @@ def pr(rs):
    continue
   tv=res.get('today',{})
   print(f'**{rank}. {m["home"]}vs{m["away"]}** | 3先决+{res.get("groups",[])[0]["cnt"] if res.get("groups") else 0}/13剩余 | {m.get("league","")}')
-  print(f'缓存:{res.get("hl","?")}({res.get("ht",0)}场)')
+  print(f'缓存:{res.get("hl","?")}({res.get("ht",0)}场, 3先决:{res.get("prereq_cnt",0)}场)')
+  # 3先决明细
+  pml=res.get('prereq_ml',[])
+  if pml:
+   print(f'  📌3先决比赛:')
+   for hm2 in pml:
+    ri={'主胜':'✅','平局':'➖','客胜':'❌'}.get(hm2.get('result',''),'')
+    dt=hm2.get('date','');hn=hm2.get('home','');an=hm2.get('away','');sc=hm2.get('score','')
+    sec_result=f'{sc}{ri}'if sc!=':'else ri
+    print(f'    {hn}vs{an} {sec_result} ({dt})')
   print()
   # today dimensions
   print('📋当天:')

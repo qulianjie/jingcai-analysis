@@ -11,7 +11,7 @@
     python scripts/4way_match.py [--date YYYY-MM-DD]
 """
 
-import json, os, sys, re
+import json, os, sys, re, math
 from datetime import datetime, date
 from collections import Counter
 
@@ -103,6 +103,34 @@ def fetch_odds_dirs(fid):
         return jc, iw
     except:
         return None, None
+
+
+def fetch_av_w(fid):
+    """从500.com欧赔页抓取百家终赔主胜"""
+    if not fid:
+        return None
+    import requests
+    from bs4 import BeautifulSoup
+    url = f'https://odds.500.com/fenxi/ouzhi-{fid}.shtml'
+    h = {'User-Agent': 'Mozilla/5.0', 'Accept-Language': 'zh-CN,zh;q=0.9'}
+    try:
+        r = requests.get(url, headers=h, timeout=10)
+        r.encoding = 'gbk'
+        sp = BeautifulSoup(r.text, 'html.parser')
+        for t in sp.find_all('table'):
+            for tr in t.find_all('tr'):
+                tds = tr.find_all('td')
+                if len(tds) < 12:
+                    continue
+                nm = tds[1].get_text().strip()
+                if '平均' in nm or '百家' in nm:
+                    try:
+                        return float(tds[6].get_text().strip().replace('\xa0', ''))
+                    except:
+                        return None
+        return None
+    except:
+        return None
 
 def fetch_macau_handicap(fid):
     """从500.com亚盘页提取澳门亚盘 HANDICAPLINE 数值（ref属性，带正负号）"""
@@ -431,7 +459,25 @@ def count_jc_matches(cache):
     return cnt
 
 
-def match_hist(cache, target_hc, jc_dir, iw_dir, iw_hc_dir=None, strict_jc=False):
+def get_av_w(m):
+    """从缓存中获取百家终赔主胜"""
+    if not isinstance(m, dict):
+        return None
+    oe = m.get('odds_europe')
+    if isinstance(oe, dict):
+        av = oe.get('av')
+        if isinstance(av, dict):
+            try:
+                return float(av['lw'])
+            except:
+                pass
+    try:
+        return float(m['WIN'])
+    except:
+        return None
+
+
+def match_hist(cache, target_hc, jc_dir, iw_dir, iw_hc_dir=None, strict_jc=False, av_w_range=None):
     """匹配历史：缺失的数据维度自动降级（不跳过整场比赛）
     
     iw_hc_dir: IW让球方向。不为None时增加IW让球条件。
@@ -479,6 +525,13 @@ def match_hist(cache, target_hc, jc_dir, iw_dir, iw_hc_dir=None, strict_jc=False
             hist_iw_hc = get_iw_hc_dir(m)
             if hist_iw_hc is not None and hist_iw_hc != iw_hc_dir:
                 continue
+        # 百家主胜范围过滤（降级后结果太多时启用）
+        if av_w_range is not None:
+            hist_av_w = get_av_w(m)
+            if hist_av_w is not None:
+                lo, hi = av_w_range
+                if not (lo <= hist_av_w <= hi):
+                    continue
         sc, r = get_score(m)
         # 获取历史比赛的完整4条件值
         hist_h, hist_hn = get_hc(m)
@@ -659,11 +712,13 @@ def main():
         macau_hc_name = ''
 
         if cd:
+            today_av_w = None
             for m in cd.get('all_matches', []):
                 if str(m.get('FIXTUREID', '')) == str(fid):
                     jc_dir = get_jc_dir(m)
                     iw_dir = get_iw_dir(m)
                     hc_dir = get_hc_dir(m)
+                    today_av_w = get_av_w(m)
                     # 从odds_asian澳门亚盘终盘取当天亚盘值
                     oa = m.get('odds_asian')
                     if isinstance(oa, list):
@@ -699,6 +754,8 @@ def main():
             src = '缓存'
         if hc_dir is None:
             hc_dir = fetch_handicap_dir(fid)
+        if today_av_w is None:
+            today_av_w = fetch_av_w(fid)
 
         print(f'{src} jc={jc_dir} iw={iw_dir} 让球={hc_dir} 澳门={macau_hc_name}({macau_hc})', end=' ')
         sys.stdout.flush()
@@ -733,6 +790,16 @@ def main():
                     hist = match_hist(cd, macau_hc, None, iw_dir, iw_hc_dir, strict_jc=False)
                     valid = [h for h in hist if 'error' not in h]
                     used_fallback = True
+                    # 降级后超过10场 → 加百家主胜范围过滤
+                    if len(valid) > 10 and today_av_w is not None:
+                        lo = math.floor(today_av_w * 10) / 10
+                        hi = round(lo + 0.09, 2)
+                        hist2 = match_hist(cd, macau_hc, None, iw_dir, iw_hc_dir, strict_jc=False, av_w_range=(lo, hi))
+                        valid2 = [h for h in hist2 if 'error' not in h]
+                        if len(valid2) > 0:
+                            hist = hist2
+                            valid = valid2
+                            print(f'[百家{lo:.2f}-{hi:.2f}]', end='')
                     print(f'⬇兜底', end='')
                 else:
                     print(f'缺IW让球', end='')
