@@ -173,8 +173,8 @@ def fix_match(fid):
                         ih = il = lh = ll = ''
                     yz_list.append({
                         'name': name,
-                        'init_pan': init_pan, 'init_water_high': ih, 'init_water_low': il,
-                        'live_pan': live_pan, 'live_water_high': lh, 'live_water_low': ll,
+                        'init_pan': init_pan, 'init_water_high': lh, 'init_water_low': ll,
+                        'live_pan': live_pan, 'live_water_high': ih, 'live_water_low': il,
                     })
                     if len(yz_list) >= 3: break
                 if len(yz_list) >= 3: break

@@ -450,11 +450,11 @@ def match_hist(cache, target_hc, jc_dir, iw_dir, iw_hc_dir=None, strict_jc=False
         if isinstance(oa, list):
             for item in oa:
                 if '门' in item.get('name', ''):
-                    lp = item.get('init_pan', '').replace('↑','').replace('↓','').replace(' ','').strip()
+                    lp = item.get('live_pan', '').replace('↑','').replace('↓','').replace(' ','').strip()
                     live_val = _match_hc_name(lp)
                     break
                 if item == oa[0]:
-                    lp = item.get('init_pan', '').replace('↑','').replace('↓','').replace(' ','').strip()
+                    lp = item.get('live_pan', '').replace('↑','').replace('↓','').replace(' ','').strip()
                     live_val = _match_hc_name(lp)
         if live_val is None or abs(live_val - target) > 0.01:
             continue

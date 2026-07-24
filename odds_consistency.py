@@ -139,7 +139,7 @@ def fo(fid):
      lh=float(re.search(r'([\d.]+)',td[ii-1].get_text()).group(1)) if ii>2 else ''
      ll=float(re.search(r'([\d.]+)',td[ii+1].get_text()).group(1)) if ii+1<len(td) else ''
     except:ih=il=lh=ll=''
-    e={'name':nm,'ip':ip,'ih':ih,'il':il,'lp':lp,'lh':lh,'ll':ll}
+    e={'name':nm,'ip':ip,'ih':lh,'il':ll,'lp':lp,'lh':ih,'ll':il}
     if'门'in nm or n==1:
      if not r['as']or'门'in nm:r['as']=e
  except:pass
@@ -197,7 +197,7 @@ def ext_hist(hm):
  if oa:
   for item in oa:
    if'门'in item.get('name','')or item==oa[0]:
-    asn={'lp':item.get('init_pan',''),'lh':item.get('lh',''),'ll':item.get('ll','')};break
+    asn={'lp':item.get('live_pan',''),'lh':item.get('live_water_high',''),'ll':item.get('live_water_low','')};break
  return av,jc,hc,asn
 
 def _get_iw_dir_companies(cs):
@@ -245,7 +245,7 @@ def sr(hist,tod):
  ext=[
   ('av_dir',lambda hm:Counter([c.get('dir','')for c in hm.get('odds_europe',{}).get('companies',[])if c.get('dir')]).most_common(1)[0][0]if hm.get('odds_europe',{}).get('companies')else None),
   ('iw_dir',lambda hm:_get_iw_dir_companies(hm.get('odds_europe',{}).get('companies',[]))),
-  ('as_pan',lambda hm:next((item.get('init_pan')for item in(hm.get('odds_asian',[])or[])if'门'in item.get('name','')or item==(hm.get('odds_asian',[])or[{}])[0]),None)),
+  ('as_pan',lambda hm:next((item.get('live_pan')for item in(hm.get('odds_asian',[])or[])if'门'in item.get('name','')or item==(hm.get('odds_asian',[])or[{}])[0]),None)),
   ('hc_dir',lambda hm:(lambda oh:oh.get('jc',{}).get('dir')if oh.get('jc')else oh.get('iw',{}).get('dir'))(hm.get('odds_handicap',{}))if hm.get('odds_handicap')else None),
   ('av_w',lambda hm:rk(float(hm.get('odds_europe',{}).get('av',{}).get('lw')))if hm.get('odds_europe',{}).get('av',{}).get('lw')else None),
   ('av_d',lambda hm:rk(float(hm.get('odds_europe',{}).get('av',{}).get('ld')))if hm.get('odds_europe',{}).get('av',{}).get('ld')else None),
