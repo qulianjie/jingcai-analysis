@@ -79,6 +79,41 @@ def fetch_today_odds(fid):
     return (av_init, av_live), (jc_init, jc_live), (iw_init, iw_live)
 
 
+def fetch_handicap_odds(fid):
+    """从rangqiu页抓取今天竞彩让球赔率（初→终+方向+让球数）"""
+    import requests
+    from bs4 import BeautifulSoup
+    h = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    try:
+        r = requests.get(f'https://odds.500.com/fenxi/rangqiu-{fid}.shtml', headers=h, timeout=10)
+        r.encoding = 'gbk'
+        sp = BeautifulSoup(r.text, 'html.parser')
+        for table in sp.find_all('table'):
+            trs = table.find_all('tr')
+            if len(trs) < 2: continue
+            tds0 = trs[0].find_all('td')
+            td1 = tds0[1].get_text().strip() if len(tds0) > 1 else ''
+            if '官' in td1 or '中国' in td1:
+                # td[2]=让球数, td[4,5,6]=init, td[7,8,9]=live
+                try:
+                    hc_num = tds0[2].get_text().strip()
+                except:
+                    hc_num = '?'
+                try:
+                    init = [float(tds0[i].get_text().strip().replace('\xa0','')) for i in [4, 5, 6]]
+                    live = [float(tds0[i].get_text().strip().replace('\xa0','')) for i in [7, 8, 9]]
+                except:
+                    return None, None, None, None
+                d = ''
+                for a, b in zip(init, live):
+                    if b > a + 0.01: d += '⬆'
+                    elif b < a - 0.01: d += '⬇'
+                    else: d += '➡'
+                return d, init, live, hc_num
+        return None, None, None, None
+    except:
+        return None, None, None, None
+
 def fetch_macau_hc(fid):
     """抓取当天澳门亚盘 HANDICAPLINE"""
     import requests
@@ -348,6 +383,12 @@ def main():
         print(f'  百 {av_label}')
         print(f'  竞 {jc_label}')
         print(f'  IW {iw_label}')
+
+        # 实时抓让球赔率
+        hc_dir_today, hc_init_today, hc_live_today, hc_num = fetch_handicap_odds(fid)
+        if hc_dir_today and hc_init_today and hc_live_today:
+            def fmt_rq(v): return f'{v[0]:.2f}/{v[1]:.2f}/{v[2]:.2f}'
+            print(f'  让({hc_num}):{hc_dir_today}  初:{fmt_rq(hc_init_today)} → 终:{fmt_rq(hc_live_today)}')
 
         # 加载缓存
         fp = find_cache(league)
