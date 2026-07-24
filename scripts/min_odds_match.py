@@ -332,14 +332,22 @@ def main():
             return f'{LAB[idx]}{r[0]:.1f}x'
 
         def full_odds_label(init, live, r, idx):
-            """格式：初1.49/4.05/4.75→终1.51/3.86/4.80(胜1.5x)"""
+            """格式：⬇⬇⬆ 初2.91/3.59/2.12→终2.84/3.59/2.22(负2.2x)"""
             if not init or not live:
                 return '缺'
-            return f'初{init[0]:.2f}/{init[1]:.2f}/{init[2]:.2f}→终{live[0]:.2f}/{live[1]:.2f}/{live[2]:.2f}({rlabel2(r, idx)})'
+            d = ''
+            for i in range(3):
+                if live[i] > init[i] + 0.01: d += '⬆'
+                elif live[i] < init[i] - 0.01: d += '⬇'
+                else: d += '➡'
+            return f'{d} 初{init[0]:.2f}/{init[1]:.2f}/{init[2]:.2f}→终{live[0]:.2f}/{live[1]:.2f}/{live[2]:.2f}({rlabel2(r, idx)})'
         av_label = full_odds_label(av_init, av_live, av_r, av_min_idx)
         jc_label = full_odds_label(jc_init, jc_live, jc_r, jc_min_idx) if jc_live and jc_init else '缺'
         iw_label = full_odds_label(iw_init, iw_live, iw_r, iw_min_idx) if iw_live and iw_init else '缺'
-        print(f'澳门:{macau_ip}→{macau_lp}({macau_val}) 百:{av_label} 竞:{jc_label} IW:{iw_label}')
+        print(f'澳门:{macau_ip}→{macau_lp}({macau_val})')
+        print(f'  百 {av_label}')
+        print(f'  竞 {jc_label}')
+        print(f'  IW {iw_label}')
 
         # 加载缓存
         fp = find_cache(league)
