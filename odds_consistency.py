@@ -115,8 +115,8 @@ def fo(fid):
     n=int(t0)
     if n not in(1,2,3):continue
     nm=td[1].get_text().strip()
-    ip=td[4].get_text().strip().replace(chr(160),'')
-    lp=td[10].get_text().strip().replace(chr(160),'')
+    ip=td[10].get_text().strip().replace(chr(160),'')  # 初盘=td[10]
+    lp=td[4].get_text().strip().replace(chr(160),'')   # 即时盘=td[4]
     try:
      ih=float(re.search(r'([\d.]+)',td[3].get_text()).group(1))
      il=float(re.search(r'([\d.]+)',td[5].get_text()).group(1))
@@ -124,8 +124,8 @@ def fo(fid):
      ll=float(re.search(r'([\d.]+)',td[11].get_text()).group(1))
     except:ih=il=lh=ll=''
     e={'name':nm,'ip':ip,'ih':ih,'il':il,'lp':lp,'lh':lh,'ll':ll}
-    if'澳门'in nm or n==1:
-     if not r['as']or'澳门'in nm:r['as']=e
+    if'门'in nm or n==1:
+     if not r['as']or'门'in nm:r['as']=e
  except:pass
  return r
 
@@ -180,8 +180,8 @@ def ext_hist(hm):
  oa=hm.get('odds_asian',[])
  if oa:
   for item in oa:
-   if'澳门'in item.get('name','')or item==oa[0]:
-    asn={'lp':item.get('live_pan',''),'lh':item.get('lh',''),'ll':item.get('ll','')};break
+   if'门'in item.get('name','')or item==oa[0]:
+    asn={'lp':item.get('init_pan',''),'lh':item.get('lh',''),'ll':item.get('ll','')};break
  return av,jc,hc,asn
 
 def _get_iw_dir_companies(cs):
@@ -229,7 +229,7 @@ def sr(hist,tod):
  ext=[
   ('av_dir',lambda hm:Counter([c.get('dir','')for c in hm.get('odds_europe',{}).get('companies',[])if c.get('dir')]).most_common(1)[0][0]if hm.get('odds_europe',{}).get('companies')else None),
   ('iw_dir',lambda hm:_get_iw_dir_companies(hm.get('odds_europe',{}).get('companies',[]))),
-  ('as_pan',lambda hm:next((item.get('live_pan')for item in(hm.get('odds_asian',[])or[])if'澳门'in item.get('name','')or item==(hm.get('odds_asian',[])or[{}])[0]),None)),
+  ('as_pan',lambda hm:next((item.get('init_pan')for item in(hm.get('odds_asian',[])or[])if'门'in item.get('name','')or item==(hm.get('odds_asian',[])or[{}])[0]),None)),
   ('hc_dir',lambda hm:(lambda oh:oh.get('jc',{}).get('dir')if oh.get('jc')else oh.get('iw',{}).get('dir'))(hm.get('odds_handicap',{}))if hm.get('odds_handicap')else None),
   ('av_w',lambda hm:rk(float(hm.get('odds_europe',{}).get('av',{}).get('lw')))if hm.get('odds_europe',{}).get('av',{}).get('lw')else None),
   ('av_d',lambda hm:rk(float(hm.get('odds_europe',{}).get('av',{}).get('ld')))if hm.get('odds_europe',{}).get('av',{}).get('ld')else None),
