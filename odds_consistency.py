@@ -115,13 +115,29 @@ def fo(fid):
     n=int(t0)
     if n not in(1,2,3):continue
     nm=td[1].get_text().strip()
-    ip=td[10].get_text().strip().replace(chr(160),'')  # 初盘=td[10]
-    lp=td[4].get_text().strip().replace(chr(160),'')   # 即时盘=td[4]
+    # 动态找盘口列：公司名(td1)之后, 第一个含"半球"/"一球"/"平手"/"球半"等盘口名的td
+    def _cln(t):return t.replace('↑','').replace('↓','').replace('升','').replace('降','').replace(' ','').replace(chr(160),'').strip()
+    live_pan=init_pan=None
+    for i in range(2,len(td)):
+     txt=_cln(td[i].get_text())
+     if not txt:continue
+     # 盘口关键字：含数字水位的先跳过
+     if re.match(r'^[\d.]+',txt):continue
+     # 是盘口名（含"半球""一球""平手""球半""受"等特征）
+     if any(k in txt for k in ('半球','一球','平手','球半','两球','三球','平半','半一')):
+      if live_pan is None:live_pan=txt  # 第一个是即时盘
+      elif init_pan is None:init_pan=txt;break  # 第二个是初始盘
+    if not live_pan or not init_pan:continue  # 找不到跳过
+    # 水位：在盘口名的前一位(high)和后一位(low)
+    lp=live_pan;ip=init_pan
     try:
-     ih=float(re.search(r'([\d.]+)',td[3].get_text()).group(1))
-     il=float(re.search(r'([\d.]+)',td[5].get_text()).group(1))
-     lh=float(re.search(r'([\d.]+)',td[9].get_text()).group(1))
-     ll=float(re.search(r'([\d.]+)',td[11].get_text()).group(1))
+     # 找盘口名在td中的位置
+     li=next(i for i in range(2,len(td)) if _cln(td[i].get_text())==live_pan)
+     ii=next(i for i in range(2,len(td)) if _cln(td[i].get_text())==init_pan)
+     ih=float(re.search(r'([\d.]+)',td[li-1].get_text()).group(1)) if li>2 else ''
+     il=float(re.search(r'([\d.]+)',td[li+1].get_text()).group(1)) if li+1<len(td) else ''
+     lh=float(re.search(r'([\d.]+)',td[ii-1].get_text()).group(1)) if ii>2 else ''
+     ll=float(re.search(r'([\d.]+)',td[ii+1].get_text()).group(1)) if ii+1<len(td) else ''
     except:ih=il=lh=ll=''
     e={'name':nm,'ip':ip,'ih':ih,'il':il,'lp':lp,'lh':lh,'ll':ll}
     if'门'in nm or n==1:
