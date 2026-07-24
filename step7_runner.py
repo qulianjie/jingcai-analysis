@@ -8,6 +8,8 @@ import sys, os, re, io, time, json, traceback
 from urllib.parse import quote
 from _log_util import setup_logger
 import requests
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _asian_util import get_macau_asian
 from _http_cache import CachedSession
 # 支持两种调用方式：match_dir 模式 或 参数模式
 if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]):
@@ -103,32 +105,12 @@ def match_level(bench_cp, bench_w, hist_cp, hist_w):
     return '低'
 
 def extract_macau_odds(text, meta=None):
-    """从yazhi页面HTML中提取澳门初盘
-    500.com近期对公司名做了混淆（如澳门→M*************），
-    改用cid=5定位澳门行，盘口名从meta.json的macau_line读取。
-    """
-    import re
-    raw = text if isinstance(text, bytes) else text.encode('gbk', errors='replace')
-    m = re.search(rb'cid=5.*?quancheng[^>]*>[^<]+</span>.*?pl_table_data[^>]*>.*?<td[^>]*>([^<]+)</td>\s*<td[^>]*>([^<]+)</td>\s*<td[^>]*>([^<]+)</td>', raw, re.DOTALL)
-    if m:
-        w1 = m.group(1).decode('gbk', errors='replace')
-        cp_raw = m.group(2).decode('gbk', errors='replace')
-        w2 = m.group(3).decode('gbk', errors='replace')
-        # 水位取纯数字部分（去掉混淆后缀如"隆媒"）
-        w1_num = re.search(r'\d+\.\d+', w1)
-        w2_num = re.search(r'\d+\.\d+', w2)
-        w1 = w1_num.group() if w1_num else w1
-        w2 = w2_num.group() if w2_num else w2
-        # 盘口名：信任实时提取值，不信任meta.json（可能被前序run的编码错误污染）
-        cp = cp_raw.strip()
-        cp = re.sub(r'<font[^>]*>.*?</font>', '', cp).strip()
-        return {'init_cp': cp, 'init_w': w1, 'init_w2': w2}
-    # 后备：原name-based方式（兼容旧版/未混淆页面）
-    m = re.search(r'quancheng[^<]*门.*?</span></a>.*?</td>\s*<td[^>]*>\s*<table[^>]*class="pl_table_data"[^>]*>.*?<td[^>]*>(\d+\.\d+)</td>\s*<td[^>]*>([^<]+)</td>\s*<td[^>]*>(\d+\.\d+)</td>', text, re.DOTALL)
-    if m:
-        cp = m.group(2).strip()
-        cp = re.sub(r'<font[^>]*>.*?</font>', '', cp).strip()
-        return {'init_cp': cp, 'init_w': m.group(1), 'init_w2': m.group(3)}
+    """从yazhi页面HTML中提取澳门即时盘(cp/水位)"""
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(text, 'html.parser')
+    macau = get_macau_asian(soup)
+    if macau:
+        return {'init_cp': macau['live_pan'], 'init_w': macau['live_wh'], 'init_w2': macau['live_wa']}
     return None
 
 def fetch_same_odds_ajax(fid, cp, s1, s2):

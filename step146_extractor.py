@@ -285,39 +285,21 @@ soup_yz = soup_yz_extract
 
 target_rows_yz = [1, 2, 3]
 yz_data = []
-for table in soup_yz.find_all('table'):
-    for tr in table.find_all('tr'):
-        tds = tr.find_all('td')
-        if len(tds) < 10: continue
-        td0 = tds[0].get_text().strip()
-        if td0.isdigit() and int(td0) in target_rows_yz:
-            name = tds[1].get_text().strip()
-            iiw = iil = liw = lil = ''
-            ll_text = ''  # 初盘盘口 (ll = live line? 实为变量名约定, 表格格式用ll_text/liw/lil当初盘组)
-            il_text = ''  # 即时盘盘口 (il = "immediate line"? 表格格式用il_text/iiw/iil当即时盘组)
-            for idx in range(len(tds)):
-                val = tds[idx].get_text().strip().replace(chr(160), '')
-                if idx == 4:
-                    # td[4] = 初盘盘口文字
-                    ll_text = re.sub(r'[\u2b06\u2b07\u27a1\u2191\u2193\u2194⬆⬇➡]', '', val).strip()
-                elif idx == 3:
-                    m = re.search(r'([\d\.]+)', val)
-                    if m: liw = m.group(1)  # 初盘主水（配合表格格式，liw用在初盘组）
-                elif idx == 5:
-                    m = re.search(r'([\d\.]+)', val)
-                    if m: lil = m.group(1)  # 初盘客水
-                elif idx == 10:
-                    # td[10] = 即时盘盘口文字
-                    il_text = re.sub(r'[\u2b06\u2b07\u27a1\u2191\u2193\u2194⬆⬇➡]', '', val).strip()
-                elif idx == 9:
-                    m = re.search(r'([\d\.]+)', val)
-                    if m: iiw = m.group(1)  # 即时盘主水（配合表格格式，iiw用在即时盘组）
-                elif idx == 11:
-                    m = re.search(r'([\d\.]+)', val)
-                    if m: iil = m.group(1)  # 即时盘客水
-            yz_data.append({'row_num': int(td0), 'name': name,
-                'il_text': il_text, 'liw': liw, 'lil': lil,
-                'iiw': iiw, 'iil': iil, 'll_text': ll_text})
+raw_asian = parse_yazhi_asian(soup_yz, max_rows=3)
+for item in raw_asian:
+    yz_data.append({
+        'row_num': int(item.get('_row_num', 1)),
+        'name': item['name'],
+        'live_pan': item['live_pan'],
+        'live_wh': item['live_wh'],
+        'live_wa': item['live_wa'],
+        'init_pan': item['init_pan'],
+        'init_wh': item['init_wh'],
+        'init_wa': item['init_wa'],
+    })
+# 补row_num（parse_yazhi_asian返回值按行顺序）
+for i, d in enumerate(yz_data):
+    d['row_num'] = i + 1
 
 company_map = {1: '威廉希尔', 2: '澳门', 3: '立博'}
 
@@ -335,7 +317,8 @@ lines6.append('|------|------|--------|')
 for d in yz_data:
     cn = company_map.get(d['row_num'], d['name'])
     lines6.append('| {} | {}（主水{}|客水{}） | {}（主水{}|客水{}） |'.format(
-        cn, d['ll_text'], d['liw'], d['lil'], d['il_text'], d['iiw'], d['iil']))
+        cn, d['init_pan'], d['init_wh'], d['init_wa'],
+        d['live_pan'], d['live_wh'], d['live_wa']))
 
 lines6.append('')
 lines6.append('---')

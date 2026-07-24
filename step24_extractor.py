@@ -8,6 +8,9 @@ import io
 if hasattr(sys.stdout, 'buffer'):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _asian_util import get_macau_asian
+
 # 支持两种调用方式
 if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]):
     MATCH_DIR = sys.argv[1]
@@ -523,22 +526,16 @@ for i, m in enumerate(all_matches, 1):
             r3 = sess.get('https://odds.500.com/fenxi/yazhi-{}.shtml'.format(fid), timeout=10)
             r3.encoding = 'gbk'
             soup3 = BeautifulSoup(r3.text, 'html.parser')
-            for table in soup3.find_all('table'):
-                for tr in table.find_all('tr'):
-                    tds = tr.find_all('td')
-                    if len(tds) < 12: continue
-                    name = tds[1].get_text().strip()
-                    if '澳' not in name and '澳' not in name: continue
-                    asian_data = {
-                        'live_pan': clean_text(tds[4].get_text()),
-                        'live_wh': clean_text(tds[3].get_text()),
-                        'live_wa': clean_text(tds[5].get_text()),
-                        'init_pan': clean_text(tds[10].get_text()),
-                        'init_wh': clean_text(tds[9].get_text()),
-                        'init_wa': clean_text(tds[11].get_text()),
-                    }
-                    break
-                if asian_data: break
+            macau = get_macau_asian(soup3)
+            if macau:
+                asian_data = {
+                    'live_pan': macau.get('live_pan', ''),
+                    'live_wh': macau.get('live_wh', ''),
+                    'live_wa': macau.get('live_wa', ''),
+                    'init_pan': macau.get('init_pan', ''),
+                    'init_wh': macau.get('init_wh', ''),
+                    'init_wa': macau.get('init_wa', ''),
+                }
         except:
 
             log.warn(f"[step24] 解析异常")
