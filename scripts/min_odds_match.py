@@ -50,7 +50,7 @@ def x_range(v):
 # ── 实时抓取 ──────────────────────────────────────
 
 def fetch_today_odds(fid):
-    """抓取当天百家终赔、竞彩终赔、IW终赔"""
+    """抓取当天百家初赔/终赔、竞彩初赔/终赔、IW初赔/终赔"""
     import requests
     from bs4 import BeautifulSoup
     h = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -58,7 +58,7 @@ def fetch_today_odds(fid):
     r = requests.get(f'https://odds.500.com/fenxi/ouzhi-{fid}.shtml', headers=h, timeout=10)
     r.encoding = 'gbk'
     s = BeautifulSoup(r.text, 'html.parser')
-    av_live = jc_live = iw_live = None
+    av_init = av_live = jc_init = jc_live = iw_init = iw_live = None
     for table in s.find_all('table'):
         for tr in table.find_all('tr'):
             tds = tr.find_all('td')
@@ -66,16 +66,17 @@ def fetch_today_odds(fid):
                 continue
             nm = tds[1].get_text().strip()
             try:
+                init = [float(tds[i].get_text().strip().replace('\xa0', '')) for i in [3, 4, 5]]
                 live = [float(tds[i].get_text().strip().replace('\xa0', '')) for i in [6, 7, 8]]
             except:
                 continue
             if '平均' in nm or '百家' in nm:
-                av_live = live
+                av_init, av_live = init, live
             if ('官' in nm or '(中国)' in nm) and jc_live is None:
-                jc_live = live
+                jc_init, jc_live = init, live
             if nm.startswith('I') and '塞浦路斯' in nm:
-                iw_live = live
-    return av_live, jc_live, iw_live
+                iw_init, iw_live = init, live
+    return (av_init, av_live), (jc_init, jc_live), (iw_init, iw_live)
 
 
 def fetch_macau_hc(fid):
@@ -304,7 +305,7 @@ def main():
         sys.stdout.flush()
 
         # 实时抓取当天数据
-        av_live, jc_live, iw_live = fetch_today_odds(fid)
+        (av_init, av_live), (jc_init, jc_live), (iw_init, iw_live) = fetch_today_odds(fid)
         macau_val, macau_ip, macau_lp = fetch_macau_hc(fid)
         time.sleep(0.3)
 
@@ -330,14 +331,15 @@ def main():
                 return '缺'
             return f'{LAB[idx]}{r[0]:.1f}x'
 
-        def full_odds_label(odds, r, idx):
-            """格式：胜2.96/平3.37/负2.24(负2.2x)"""
-            if not odds: return '缺'
-            return f'胜{odds[0]:.2f}/平{odds[1]:.2f}/负{odds[2]:.2f}({rlabel2(r, idx)})'
-        av_label = full_odds_label(av_live, av_r, av_min_idx)
-        jc_label = full_odds_label(jc_live, jc_r, jc_min_idx) if jc_live else '缺'
-        iw_label = full_odds_label(iw_live, iw_r, iw_min_idx) if iw_live else '缺'
-        print(f'澳门={macau_lp}({macau_val}) 百:{av_label} 竞:{jc_label} IW:{iw_label}')
+        def full_odds_label(init, live, r, idx):
+            """格式：初1.49/4.05/4.75→终1.51/3.86/4.80(胜1.5x)"""
+            if not init or not live:
+                return '缺'
+            return f'初{init[0]:.2f}/{init[1]:.2f}/{init[2]:.2f}→终{live[0]:.2f}/{live[1]:.2f}/{live[2]:.2f}({rlabel2(r, idx)})'
+        av_label = full_odds_label(av_init, av_live, av_r, av_min_idx)
+        jc_label = full_odds_label(jc_init, jc_live, jc_r, jc_min_idx) if jc_live and jc_init else '缺'
+        iw_label = full_odds_label(iw_init, iw_live, iw_r, iw_min_idx) if iw_live and iw_init else '缺'
+        print(f'澳门:{macau_ip}→{macau_lp}({macau_val}) 百:{av_label} 竞:{jc_label} IW:{iw_label}')
 
         # 加载缓存
         fp = find_cache(league)
