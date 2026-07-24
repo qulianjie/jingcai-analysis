@@ -247,7 +247,7 @@ def sr(hist,tod):
 
  groups={}
  for hm in ml:
-  # 先决条件：澳门亚盘 + 百家盘路 + IW盘路 必须全部一致
+  # 先决条件：澳门亚盘(受/非受二值) + 百家盘路(精确) + IW盘路(⬆/⬇精确,➡通配)
   all_prereq_ok=True
   for k in PREREQ_KEYS:
    idx=DK.index(k)
@@ -255,7 +255,19 @@ def sr(hist,tod):
    tv_v=tv.get(k)
    if not tv_v:all_prereq_ok=False;break
    hv=fn(hm)
-   if hv is None or hv!=tv_v:all_prereq_ok=False;break
+   if hv is None:all_prereq_ok=False;break
+   if k=='as_pan':
+    # 亚盘：只检查受/非受
+    if tv_v.startswith('受')!=hv.startswith('受'):all_prereq_ok=False;break
+   elif k=='iw_dir':
+    # IW方向：➡通配（当天➡的位置可匹配历史的任何值）
+    ok=True
+    for a,b in zip(tv_v,hv):
+     if a!='➡' and a!=b:ok=False;break
+    if not ok:all_prereq_ok=False;break
+   else:
+    # 百家盘路：精确匹配
+    if hv!=tv_v:all_prereq_ok=False;break
   if not all_prereq_ok:continue
   # 剩余变量计数（不含先决条件），≥2才保留
   mc=0;mk=[]
