@@ -12,7 +12,7 @@ for d in DATA_DIRS:
         name = os.path.basename(d)
         print(f'Testing: {name}')
         ret = subprocess.run(['python', 'step8_1923_extractor.py', d],
-                            capture_output=True, text=True, timeout=300)
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=300)
         print(f'  Exit: {ret.returncode}')
         if ret.stdout:
             print(f'  Stdout: {ret.stdout[:500]}')

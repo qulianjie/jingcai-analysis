@@ -22,7 +22,7 @@ def log(tag, msg):
 def run(cmd, timeout=600, label=''):
     log('RUN', '{}{}'.format(label, ' '.join(cmd[-3:])))
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True,
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                                 encoding='utf-8', errors='replace', timeout=timeout)
         if result.returncode != 0:
             for line in (result.stderr or '').strip().split('\n')[-3:]:
@@ -41,7 +41,7 @@ def _acquire_lock(name):
     try:
         result = subprocess.run(
             [sys.executable, os.path.join(SCRIPT_DIR, 'protect.py'), 'lock', name],
-            capture_output=True, text=True, timeout=30
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30
         )
         return result.returncode == 0
     except:
@@ -51,7 +51,7 @@ def _release_lock(name):
     try:
         subprocess.run(
             [sys.executable, os.path.join(SCRIPT_DIR, 'protect.py'), 'unlock', name],
-            capture_output=True, text=True, timeout=10
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10
         )
     except:
         pass

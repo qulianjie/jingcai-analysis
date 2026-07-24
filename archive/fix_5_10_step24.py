@@ -16,7 +16,7 @@ for match_dir in missing:
     name = os.path.basename(match_dir)
     print(f'Running step24 for {name}...')
     ret = subprocess.run(['python', 'step24_extractor.py', match_dir], 
-                        capture_output=True, text=True, timeout=120)
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=120)
     if os.path.exists(os.path.join(match_dir, 'step24_panlu_match.json')):
         print(f'  OK')
     else:

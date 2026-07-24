@@ -21,7 +21,7 @@ def run_node(script, args, timeout=300):
     cmd = ['node', os.path.join(SCRIPT_DIR, script)] + args
     log('CMD: ' + ' '.join(cmd))
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True,
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                                 timeout=timeout, encoding='utf-8', errors='replace')
         for line in (result.stdout or '').split('\n'):
             s = line.strip()

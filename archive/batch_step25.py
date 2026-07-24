@@ -52,7 +52,7 @@ for dt in sorted(dates_to_run):
     print(f'\n>>> 跑 {dt} 的step25...')
     cmd = [sys.executable, os.path.join(SCRIPT_DIR, 'step25_zhuangjia.py'), dt]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600,
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=3600,
                                encoding='utf-8', errors='replace')
         if result.returncode == 0:
             # 提取关键输出

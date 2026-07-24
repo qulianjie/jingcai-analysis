@@ -36,7 +36,7 @@ for match_dir in remaining:
         print(f'  Running step918 for g4/g5...')
         try:
             ret = subprocess.run(['python', 'step918_extractor.py', match_dir],
-                                capture_output=True, text=True, timeout=180)
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=180)
             g4_ok = os.path.isdir(g4) and len(os.listdir(g4)) > 0
             g5_ok = os.path.isdir(g5) and len(os.listdir(g5)) > 0
             print(f'  g4={g4_ok}, g5={g5_ok}')
@@ -51,7 +51,7 @@ for match_dir in remaining:
         print(f'  Running step8_1923 for g6...')
         try:
             ret = subprocess.run(['python', 'step8_1923_extractor.py', match_dir],
-                                capture_output=True, text=True, timeout=300)
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=300)
             g6_ok = os.path.isdir(g6) and len(os.listdir(g6)) > 0
             print(f'  g6={g6_ok}')
         except Exception as e:
@@ -63,7 +63,7 @@ print("Generating final report for 5/10")
 print("=" * 60)
 try:
     ret = subprocess.run(['python', 'final_report_generator.py', '2026-05-10'],
-                        capture_output=True, text=True, timeout=120)
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=120)
     print(f'  Exit: {ret.returncode}')
     if ret.stdout:
         for line in ret.stdout.strip().split('\n')[-3:]:

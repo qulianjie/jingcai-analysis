@@ -26,7 +26,7 @@ def log(tag, msg):
 def run(cmd, timeout=600):
     log('RUN', ' '.join(str(x) for x in cmd[-3:]))
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True,
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                                 encoding='utf-8', errors='replace', timeout=timeout)
         if result.returncode != 0:
             err_lines = result.stderr.strip().split('\n')[-3:] if result.stderr else ['unknown']

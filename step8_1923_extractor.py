@@ -917,42 +917,46 @@ if cur_jc:
     bench_jc_rq_live = [cur_jc['lw'], cur_jc['ld'], cur_jc['ll']]
     log.info('  让球基准即时盘: {}/{} {}'.format(bench_jc_rq_live[0], bench_jc_rq_live[1], bench_jc_rq_live[2]))
 
-# 先为所有历史比赛抓取让球数据
-log.info('  抓取历史让球数据 ({} 场)...'.format(len(step19_data)))
+# 先为所有历史比赛获取让球数据（从缓存优先）
+log.info('  获取历史让球数据 ({} 场)...'.format(len(step19_data)))
 step19_with_rq = []
 for i, m in enumerate(step19_data, 1):
     fid = m.get('fid', '')
-    ouzhi = m.get('ouzhi')
     jc_rq = None
     if fid:
-        try:
-            r = sess.get('https://odds.500.com/fenxi/rangqiu-{}.shtml'.format(fid), timeout=10)
-            r.encoding = 'gbk'
-            soup = BeautifulSoup(r.text, 'html.parser')
-            for table in soup.find_all('table'):
-                for tr in table.find_all('tr'):
-                    tds = tr.find_all('td')
-                    if len(tds) < 12: continue
-                    if tds[0].get_text().strip() != '1': continue
-                    nums = []
-                    for idx in [4,5,6,7,8,9]:
-                        val = clean_text(tds[idx].get_text())
-                        try: nums.append(float(val))
-                        except:
-                            # 非赔率列（概率/返还率），跳过
-                            pass
-                    if len(nums) >= 6:
-                        jc_rq = {'iw': '{:.2f}'.format(nums[0]), 'id': '{:.2f}'.format(nums[1]), 'il': '{:.2f}'.format(nums[2]),
-                                 'lw': '{:.2f}'.format(nums[3]), 'ld': '{:.2f}'.format(nums[4]), 'll': '{:.2f}'.format(nums[5])}
-                        break
-                if jc_rq: break
-        except Exception as e:
-            log.warning(f'[step8] 让球HTTP失败 fid={fid}: {e}')
+        # 优先从联赛缓存读取 odds_handicap
+        oh = m.get('odds_handicap')
+        if oh and isinstance(oh, dict) and oh.get('jc') and oh['jc'].get('iw') is not None:
+            jc_rq = {'iw': '{:.2f}'.format(oh['jc']['iw']), 'id': '{:.2f}'.format(oh['jc']['id']),
+                     'il': '{:.2f}'.format(oh['jc']['il']), 'lw': '{:.2f}'.format(oh['jc']['lw']),
+                     'ld': '{:.2f}'.format(oh['jc']['ld']), 'll': '{:.2f}'.format(oh['jc']['ll'])}
+        else:
+            # 缓存没有，HTTP回退
+            try:
+                r = sess.get('https://odds.500.com/fenxi/rangqiu-{}.shtml'.format(fid), timeout=10)
+                r.encoding = 'gbk'
+                soup = BeautifulSoup(r.text, 'html.parser')
+                for table in soup.find_all('table'):
+                    for tr in table.find_all('tr'):
+                        tds = tr.find_all('td')
+                        if len(tds) < 12: continue
+                        if tds[0].get_text().strip() != '1': continue
+                        nums = []
+                        for idx in [4,5,6,7,8,9]:
+                            val = clean_text(tds[idx].get_text())
+                            try: nums.append(float(val))
+                            except: pass
+                        if len(nums) >= 6:
+                            jc_rq = {'iw': '{:.2f}'.format(nums[0]), 'id': '{:.2f}'.format(nums[1]), 'il': '{:.2f}'.format(nums[2]),
+                                     'lw': '{:.2f}'.format(nums[3]), 'ld': '{:.2f}'.format(nums[4]), 'll': '{:.2f}'.format(nums[5])}
+                            break
+                    if jc_rq: break
+            except Exception as e:
+                log.warning(f'[step8] 让球HTTP失败 fid={fid}: {e}')
     if jc_rq:
         step19_with_rq.append({**m, 'jc_rq': jc_rq})
-    time.sleep(0.2)
     if i % 30 == 0:
-        log.info('  已抓取 {}/{} 场...'.format(i, len(step19_data)))
+        log.info('  已获取 {}/{} 场...'.format(i, len(step19_data)))
 log.info('  有让球数据: {} 场'.format(len(step19_with_rq)))
 
 # 独立筛选：让球即时盘 vs 历史让球终盘

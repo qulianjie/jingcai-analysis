@@ -24,7 +24,7 @@ for date in dates:
         print(f'Fixing g6: {os.path.basename(match_dir)}')
         ret = subprocess.run(
             ['python', 'step8_1923_extractor.py', match_dir],
-            capture_output=True, text=True, timeout=120
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=120
         )
         if ret.returncode == 0 and os.path.isdir(g6) and len(os.listdir(g6)) > 0:
             fixed += 1

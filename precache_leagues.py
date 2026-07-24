@@ -427,8 +427,9 @@ def _enrich_cache(cache_path, max_workers=20):
         if not fid or fid in DEAD_FIDS:
             continue
         oe = m.get('odds_europe')
-        # 如果没有 odds_europe，或者有但全是空值(如404页面)，需富集
-        if not oe or (isinstance(oe, dict) and not any(oe.get(k) for k in ('jc','iw','av'))):
+        oh = m.get('odds_handicap')
+        # 如果缺欧赔或让球数据，需富集
+        if not oe or (isinstance(oe, dict) and not any(oe.get(k) for k in ('jc','iw','av'))) or not oh:
             to_enrich.append(fid)
     if not to_enrich:
         print('[ENRICH] {}: 没有需要富集的比赛'.format(league))

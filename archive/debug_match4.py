@@ -50,7 +50,7 @@ print(f"\nRunning step8_1923_extractor.py with dir: {target_dir}")
 result = subprocess.run(
     [sys.executable, '-u', 'step8_1923_extractor.py', target_dir],
     cwd=base,
-    capture_output=True,
+    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
     text=True,
     timeout=300
 )

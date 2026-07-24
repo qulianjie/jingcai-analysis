@@ -12,7 +12,7 @@ def run_step24(match_dir):
     if os.path.exists(step24):
         return (name, 'skip', 0)
     ret = subprocess.run(['python', 'step24_extractor.py', match_dir],
-                        capture_output=True, text=True, timeout=120)
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=120)
     return (name, 'OK' if os.path.exists(step24) else 'FAIL', ret.returncode)
 
 def run_g6(match_dir):
@@ -21,7 +21,7 @@ def run_g6(match_dir):
     if os.path.isdir(g6) and len(os.listdir(g6)) > 0:
         return (name, 'skip', 0)
     ret = subprocess.run(['python', 'step8_1923_extractor.py', match_dir],
-                        capture_output=True, text=True, timeout=180)
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=180)
     return (name, 'OK' if (os.path.isdir(g6) and len(os.listdir(g6)) > 0) else 'FAIL', ret.returncode)
 
 def run_g4g5(match_dir):
@@ -33,7 +33,7 @@ def run_g4g5(match_dir):
     if not need_g4 and not need_g5:
         return (name, 'skip', 0)
     ret = subprocess.run(['python', 'step918_extractor.py', match_dir],
-                        capture_output=True, text=True, timeout=180)
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=180)
     g4_ok = os.path.isdir(g4) and len(os.listdir(g4)) > 0
     g5_ok = os.path.isdir(g5) and len(os.listdir(g5)) > 0
     status = 'OK' if (g4_ok and g5_ok) else f'PARTIAL(g4={g4_ok},g5={g5_ok})'
@@ -90,14 +90,14 @@ for match_dir in sorted(glob.glob(os.path.join(DATA_5_16, 'match*'))):
     
     if need_g4 or need_g5:
         ret = subprocess.run(['python', 'step918_extractor.py', match_dir],
-                            capture_output=True, text=True, timeout=180)
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=180)
         g4_ok = os.path.isdir(g4) and len(os.listdir(g4)) > 0
         g5_ok = os.path.isdir(g5) and len(os.listdir(g5)) > 0
         print(f'  {name} g4/g5: {"OK" if (g4_ok and g5_ok) else "FAIL"}')
     
     if need_g6:
         ret = subprocess.run(['python', 'step8_1923_extractor.py', match_dir],
-                            capture_output=True, text=True, timeout=180)
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=180)
         if os.path.isdir(g6) and len(os.listdir(g6)) > 0:
             print(f'  {name} g6: OK')
         else:
@@ -109,7 +109,7 @@ print("Step 4: Generate final report for 5/10")
 print("=" * 60)
 try:
     ret = subprocess.run(['python', 'final_report_generator.py', '2026-05-10'],
-                        capture_output=True, text=True, timeout=120)
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=120)
     print(f'  Exit code: {ret.returncode}')
     if ret.stdout:
         for line in ret.stdout.strip().split('\n')[-3:]:

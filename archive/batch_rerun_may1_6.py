@@ -26,7 +26,7 @@ def release_lock(date_str):
     if os.path.exists(protect):
         try:
             subprocess.run([sys.executable, protect, 'unlock', lock_name],
-                         capture_output=True, text=True, timeout=10)
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10)
         except:
             pass
     lock_file = os.path.join(LOCKS_DIR, lock_name + '.lock')
@@ -59,7 +59,7 @@ def run_date(date_str):
     try:
         result = subprocess.run(
             [sys.executable, pipeline, date_str],
-            capture_output=True, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
             timeout=7200,
             encoding='utf-8', errors='replace'
         )
