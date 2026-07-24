@@ -411,12 +411,33 @@ def main():
         print(f'  📊 {len(hits)}场匹配')
         for h in hits:
             ri = {'主胜': '✅', '平局': '➖', '客胜': '❌'}.get(h.get('result', ''), '')
-            av_s = f"百:{fmt_odds(h['av_i'])}→{fmt_odds(h['av_l'])}"
-            jc_s = f"竞:{fmt_odds(h['jc_i'])}→{fmt_odds(h['jc_l'])}" if h['jc_l'] else ''
-            iw_s = f"IW:{fmt_odds(h['iw_i'])}→{fmt_odds(h['iw_l'])}" if h['iw_l'] else ''
-            hc_s = f"让:{h['hc_d']} {h['hc_i']}→{h['hc_l']}" if h['hc_d'] != '-' else ''
-            as_s = f"亚:{h['as_ip']}→{h['as_lp']}"
-            print(f'  {h["date"]} {h["home"]}vs{h["away"]} {h["score"]}{ri} {av_s} {jc_s} {iw_s} {hc_s} {as_s}'.rstrip())
+            # 计算每家公司最小值标签
+            def min_label(odds):
+                if not odds or len(odds) < 3: return '缺'
+                idx = odds.index(min(odds))
+                return f'{["胜","平","负"][idx]}{min(odds):.2f}'
+            # 计算方向变化
+            def dir_change(init, live):
+                if not init or not live: return ''
+                d = []
+                for i in range(3):
+                    if live[i] > init[i] + 0.01: d.append('⬆')
+                    elif live[i] < init[i] - 0.01: d.append('⬇')
+                    else: d.append('➡')
+                return ''.join(d)
+            print(f'  [{h["date"]}] {h["home"]} vs {h["away"]}  {h["score"]} {ri}')
+            av_dir = dir_change(h['av_i'], h['av_l'])
+            print(f'    百家 {av_dir} 初:{fmt_odds(h["av_i"])} → 终:{fmt_odds(h["av_l"])}  ←最小值{min_label(h["av_l"])}')
+            if h['jc_l']:
+                jc_dir = dir_change(h['jc_i'], h['jc_l'])
+                print(f'    竞彩 {jc_dir} 初:{fmt_odds(h["jc_i"])} → 终:{fmt_odds(h["jc_l"])}  ←最小值{min_label(h["jc_l"])}')
+            if h['iw_l']:
+                iw_dir = dir_change(h['iw_i'], h['iw_l'])
+                print(f'    IW   {iw_dir} 初:{fmt_odds(h["iw_i"])} → 终:{fmt_odds(h["iw_l"])}  ←最小值{min_label(h["iw_l"])}')
+            if h['hc_d'] != '-':
+                print(f'    让球方向:{h["hc_d"]}  初:{h["hc_i"]} → 终:{h["hc_l"]}')
+            print(f'    亚盘 {h["as_ip"]} → {h["as_lp"]}')
+            print()
 
         if hits:
             total_hits += 1
