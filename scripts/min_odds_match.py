@@ -3,7 +3,7 @@
 """
 赔率最小值匹配——同联赛+同亚盘+百家/竞彩/IW 最小值范围匹配
 """
-import json, os, sys, re, math, time
+import json, os, sys, re, math, time, requests
 from datetime import datetime, date
 from collections import Counter
 
@@ -13,7 +13,7 @@ TASKS_DIR = os.path.join(SD, 'tasks')
 
 # ── 盘口名→HANDICAPLINE ──────────────────────────
 _HANDICAP_ITEMS = sorted([
-    ('平手', 0.0), ('平手/半球', 0.25), ('平半', 0.25),
+    ('平手', 0.0), ('平手/半球', -0.25), ('平半', -0.25),
     ('半球', -0.5), ('半球/一球', -0.75), ('半一', -0.75),
     ('一球', -1.0), ('一球/球半', -1.25), ('球半', -1.5),
     ('球半/两球', -1.75), ('两球', -2.0), ('两球/两球半', -2.25),
@@ -144,6 +144,12 @@ def fetch_macau_hc(fid):
 def find_cache(league):
     if not os.path.exists(CACHE_DIR):
         return None
+    # 联赛名别名映射
+    ALIAS = {
+        '韩职': 'K1联赛',
+        '美职足': '美职联',
+    }
+    league = ALIAS.get(league, league)
     best = 0
     best_fp = None
     for fn in os.listdir(CACHE_DIR):
@@ -184,16 +190,33 @@ def get_today_matches(td):
                         'matchnum': m.get('matchnum', '?'),
                     })
             return ml
-    # 从500.com实时抓当天
-    h = {'User-Agent': 'Mozilla/5.0', 'Accept-Language': 'zh-CN,zh;q=0.9'}
-    r = requests.get(f'https://odds.500.com/jc/zhizun/index.php?c=one&cl=1&d={ds}', headers=h, timeout=10)
-    r.encoding = 'gbk'
-    import re
-    # 简单解析
-    ml = []
-    for m in re.finditer(r'FID=(\d+).*?([^\s]+)\s*vs\s*([^\s<]+)', r.text):
-        ml.append({'home': m.group(2), 'away': m.group(3), 'fid': m.group(1), 'league': '?', 'matchnum': '?'})
-    return ml
+    # 从500.com实时抓当天（trade.500.com/jczq/）
+    from bs4 import BeautifulSoup
+    h = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+         'Accept-Language': 'zh-CN,zh;q=0.9'}
+    try:
+        r = requests.get('http://trade.500.com/jczq/', headers=h, timeout=15)
+        r.encoding = 'gbk'
+        sp = BeautifulSoup(r.text, 'html.parser')
+        ml = []
+        for tr in sp.find_all('tr'):
+            tds = tr.find_all('td')
+            if len(tds) < 8: continue
+            mn = tds[0].get_text().strip()
+            if not re.match(r'周[一二三四五六日]\d{3}', mn): continue
+            league = tds[1].get_text().strip()
+            ht = tds[3].find('span', class_='team-l')
+            at = tds[3].find('span', class_='team-r')
+            home = ht.find('a').get_text().strip() if (ht and ht.find('a')) else ''
+            away = at.find('a').get_text().strip() if (at and at.find('a')) else ''
+            fid = ''
+            for a in tds[6].find_all('a'):
+                m = re.search(r'shuju-(\d+)\.shtml', a.get('href', ''))
+                if m: fid = m.group(1); break
+            ml.append({'home': home, 'away': away, 'league': league, 'fid': fid, 'matchnum': mn})
+        return ml
+    except:
+        return []
 
 
 # ── 历史匹配 ──────────────────────────────────────
@@ -221,6 +244,13 @@ def get_hist_odds(m):
             if live and len(live) >= 3:
                 try:
                     iw_live = (float(live[0]), float(live[1]), float(live[2]))
+                except:
+                    pass
+            else:
+                # 兼容巴甲格式：lw/ld/ll 字段
+                try:
+                    if c.get('lw') is not None:
+                        iw_live = (float(c['lw']), float(c['ld']), float(c['ll']))
                 except:
                     pass
             break
@@ -299,6 +329,13 @@ def get_hist_init_odds(m):
             if init and len(init) >= 3:
                 try:
                     iw_init = (float(init[0]), float(init[1]), float(init[2]))
+                except:
+                    pass
+            else:
+                # 兼容巴甲格式：iw/id/il 字段
+                try:
+                    if c.get('iw') is not None:
+                        iw_init = (float(c['iw']), float(c['id']), float(c['il']))
                 except:
                     pass
             break

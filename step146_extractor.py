@@ -7,6 +7,7 @@ import sys, os, requests, re, time, json
 from bs4 import BeautifulSoup
 from datetime import datetime
 from _http_cache import CachedSession
+from _asian_util import parse_yazhi_asian
 
 # 支持两种调用方式：match_dir 模式 或 参数模式
 if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]):

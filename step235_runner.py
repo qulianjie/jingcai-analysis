@@ -160,26 +160,35 @@ for table in soup.find_all('table'):
 jc = companies.get(1)
 iwc = companies.get(6) or companies.get(4)
 
-resp_rq = sess.get('https://odds.500.com/fenxi/rangqiu-%s.shtml' % FID, timeout=15)
-resp_rq.encoding = 'gbk'
-soup_rq = BeautifulSoup(resp_rq.text, 'html.parser')
 rq_companies = {}
-for table in soup_rq.find_all('table'):
-    for tr in table.find_all('tr'):
-        tds = tr.find_all('td')
-        if len(tds) < 12: continue
-        td0 = tds[0].get_text().strip()
-        td2 = tds[2].get_text().strip().replace(chr(160), '')
-        if td0.isdigit():
-            nums = []
-            for idx in [4, 5, 6, 7, 8, 9]:
-                s = tds[idx].get_text().strip().replace(chr(160), '')
-                try: nums.append(float(s))
-                except: pass
-            if len(nums) >= 6:
-                rq_companies[int(td0)] = {'handicap': td2,
-                    'init_w': nums[0], 'init_d': nums[1], 'init_l': nums[2],
-                    'live_w': nums[3], 'live_d': nums[4], 'live_l': nums[5]}
+for retry in range(3):
+    try:
+        resp_rq = sess.get('https://odds.500.com/fenxi/rangqiu-%s.shtml' % FID, timeout=15)
+        resp_rq.encoding = 'gbk'
+        soup_rq = BeautifulSoup(resp_rq.text, 'html.parser')
+        for table in soup_rq.find_all('table'):
+            for tr in table.find_all('tr'):
+                tds = tr.find_all('td')
+                if len(tds) < 12: continue
+                td0 = tds[0].get_text().strip()
+                td2 = tds[2].get_text().strip().replace(chr(160), '')
+                if td0.isdigit():
+                    nums = []
+                    for idx in [4, 5, 6, 7, 8, 9]:
+                        s = tds[idx].get_text().strip().replace(chr(160), '')
+                        try: nums.append(float(s))
+                        except: pass
+                    if len(nums) >= 6:
+                        rq_companies[int(td0)] = {'handicap': td2,
+                            'init_w': nums[0], 'init_d': nums[1], 'init_l': nums[2],
+                            'live_w': nums[3], 'live_d': nums[4], 'live_l': nums[5]}
+        if rq_companies:
+            break  # 有数据则跳出重试
+    except Exception as e:
+        log.warning('让球页请求失败(重试%d/3): %s', retry+1, e)
+    if retry < 2:
+        import time
+        time.sleep(2)
 
 rq_jc = rq_companies.get(1)
 

@@ -21,7 +21,7 @@ TASKS_DIR = os.path.join(SD, 'tasks')
 
 # 盘口名 → HANDICAPLINE 映射（按名称长度降序，避免"半球"提前匹配"半球/一球"）
 _HANDICAP_ITEMS = sorted([
-    ('平手', 0.0), ('平手/半球', 0.25), ('平半', 0.25),
+    ('平手', 0.0), ('平手/半球', -0.25), ('平半', -0.25),
     ('半球', -0.5), ('半球/一球', -0.75), ('半一', -0.75),
     ('一球', -1.0), ('一球/球半', -1.25), ('球半', -1.5),
     ('球半/两球', -1.75), ('两球', -2.0), ('两球/两球半', -2.25),
@@ -301,6 +301,14 @@ def find_cache(league):
     """找联赛缓存：优先已富集、场数多的"""
     if not league:
         return None
+    # 联赛名别名映射（500.com名 → 缓存文件名）
+    ALIAS = {
+        '韩职': 'K1联赛',
+        'K1联赛': '韩职',
+        '美职足': '美职联',
+        '美职联': '美职足',
+    }
+    league = ALIAS.get(league, league)
     fs = [f for f in os.listdir(CACHE_DIR) if f.endswith('.json')]
     # 先找精确匹配
     exact = []
@@ -757,6 +765,7 @@ def main():
         jc_dir = iw_dir = hc_dir = None
         macau_hc = None
         macau_hc_name = ''
+        today_av_w = None
 
         if cd:
             today_av_w = None
