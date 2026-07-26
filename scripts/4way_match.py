@@ -170,8 +170,7 @@ def fetch_macau_handicap(fid):
                                 return float(ref)
                             except:
                                 continue
-                return None
-        return None
+                continue
     except:
         return None
 
