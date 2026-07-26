@@ -464,7 +464,7 @@ def verify_match_data(match_dir, home='', away=''):
         'group01_europe/step2_jingcai_same.txt': 630,       # 空模板527+103
         'group01_europe/step3_interwetten_same.txt': 640,   # 空模板536+104
         'group02_handicap/step5_handicap_same.txt': 420,    # 空模板315+105 (无同赔数据)
-        'group03_asian/step7_macau_same.txt': 1200,         # 澳门同赔无数据时约1100
+        'group03_asian/step7_macau_same.txt': 900,          # 澳门同赔(有数据时~950,无数据时~550)
         'group03_asian/step8_same_league.txt': 880,         # 空模板774+106 (原1370太宽→改880)
         'group04_teamA/step9_home_history.txt': 1700,       # 空模板1520+180
         'group05_teamB/step14_away_history.txt': 1700,      # 空模板1500+200
@@ -553,7 +553,8 @@ def verify_match_data(match_dir, home='', away=''):
         else:
             with open(fp, 'r', encoding='utf-8') as f:
                 content = f.read()
-            if '提取失败' in content or '表格无数据行' in content or '共0场' in content:
+            # 只检查主表是否为空（"所有赛事】0场"），避免盘路统计中的"共0场"误判
+            if '提取失败' in content or '表格无数据行' in content or '所有赛事】0场' in content:
                 issues.append('{}提取失败或无数据 ({})'.format(desc, step_file))
     
     if issues:
