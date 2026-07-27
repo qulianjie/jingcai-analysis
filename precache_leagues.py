@@ -723,6 +723,30 @@ def main():
             _add_computed_fields(league_filtered)
             with_scores = sum(1 for m in league_filtered if m.get('_computed'))
 
+            # 保留旧缓存的富集数据（不覆盖亚盘/欧赔详情）
+            old_matches = {}
+            old_enriched = None
+            if os.path.exists(cache_path):
+                try:
+                    with open(cache_path, 'r', encoding='utf-8') as f:
+                        old = json.load(f)
+                    old_enriched = old.get('enriched_date') or old.get('enriched')
+                    for om in old.get('all_matches', []):
+                        fid = str(om.get('FIXTUREID', ''))
+                        if fid:
+                            old_matches[fid] = om
+                except:
+                    pass
+
+            # 合并：新比赛数据 + 旧匹配的富集字段
+            for m in league_filtered:
+                fid = str(m.get('FIXTUREID', ''))
+                if fid in old_matches:
+                    old_om = old_matches[fid]
+                    for enrich_key in ['odds_europe', 'odds_asian', 'odds_handicap', 'enriched']:
+                        if enrich_key in old_om and enrich_key not in m:
+                            m[enrich_key] = old_om[enrich_key]
+
             cache_data = {
                 'league': league,
                 'date': datetime.now().strftime('%Y-%m-%d %H:%M'),
@@ -732,6 +756,8 @@ def main():
                 'matches_with_scores': with_scores,
                 'all_matches': league_filtered,
             }
+            if old_enriched:
+                cache_data['enriched'] = old_enriched
 
             with open(cache_path, 'w', encoding='utf-8') as f:
                 json.dump(cache_data, f, ensure_ascii=False, indent=2)
