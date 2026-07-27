@@ -762,6 +762,9 @@ def main():
             with open(cache_path, 'w', encoding='utf-8') as f:
                 json.dump(cache_data, f, ensure_ascii=False, indent=2)
 
+            # 增量富集（新比赛补亚盘/欧赔数据，已有富集的不重复拉取）
+            _enrich_cache(cache_path)
+
             print('[PRECACHE] {}: {}场（{}场有比分）→ 缓存 {}'.format(
                 league, len(league_filtered), with_scores, cache_path))
 
