@@ -54,8 +54,8 @@ def dir_from_3(init, live):
         parts = []
         for i, l in zip(init, live):
             fi, fl = float(i), float(l)
-            if fl < fi - 0.01: parts.append('⬇')
-            elif fl > fi + 0.01: parts.append('⬆')
+            if fl <= fi - 0.01: parts.append('⬇')
+            elif fl >= fi + 0.01: parts.append('⬆')
             else: parts.append('➡')
         return ''.join(parts)
     except:
