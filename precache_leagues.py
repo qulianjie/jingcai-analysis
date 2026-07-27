@@ -738,13 +738,13 @@ def main():
                 except:
                     pass
 
-            # 合并：新比赛数据 + 旧匹配的富集字段
+            # 合并：新比赛数据优先，补充旧缓存的富集字段
             for m in league_filtered:
                 fid = str(m.get('FIXTUREID', ''))
                 if fid in old_matches:
                     old_om = old_matches[fid]
                     for enrich_key in ['odds_europe', 'odds_asian', 'odds_handicap', 'enriched']:
-                        if enrich_key in old_om and enrich_key not in m:
+                        if enrich_key in old_om:
                             m[enrich_key] = old_om[enrich_key]
 
             cache_data = {
