@@ -42,6 +42,35 @@ CUP_NAMES = ['欧罗巴', '欧联', '欧协联', '解放者杯', '南美解放�
              '英格兰足总杯', '英格兰联赛杯', '葡超杯', '巴甲杯', '巴西杯',
              '阿根廷杯', '哥伦杯', '厄瓜杯', '日本天皇杯', '亚冠', '亚足联冠军', '非洲冠军杯']
 
+BACKUP_DIR = os.path.join(SCRIPT_DIR, 'data', 'league_cache_backup')
+MAX_BACKUPS_PER_LEAGUE = 3
+
+def _backup_cache(cache_path):
+    """写缓存前备份旧文件，保留最近MAX_BACKUPS_PER_LEAGUE份"""
+    if not os.path.exists(cache_path):
+        return
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    try:
+        base = os.path.basename(cache_path).replace('.json', '')
+        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_path = os.path.join(BACKUP_DIR, f'{base}_{ts}.json')
+        # 用shutil.copy2保留mtime
+        import shutil
+        shutil.copy2(cache_path, backup_path)
+        # 清理旧备份，只留最近N份
+        backups = sorted([
+            f for f in os.listdir(BACKUP_DIR)
+            if f.startswith(base + '_') and f.endswith('.json')
+        ])
+        while len(backups) > MAX_BACKUPS_PER_LEAGUE:
+            old = backups.pop(0)
+            try:
+                os.remove(os.path.join(BACKUP_DIR, old))
+            except:
+                pass
+    except Exception as e:
+        print('[BACKUP] {}: 备份失败: {}'.format(cache_path, e))
+
 
 def _acquire_lock(lock_path, timeout=15):
     """获取目录锁，timeout秒内重试"""
@@ -600,12 +629,41 @@ def main():
                     league_filtered.append(d)
                 _add_computed_fields(league_filtered)
                 with_scores = sum(1 for m in league_filtered if m.get('_computed'))
+
+                # 保留旧缓存的富集数据（不覆盖亚盘/欧赔详情）
+                old_matches = {}
+                old_enriched = None
+                if os.path.exists(cache_path):
+                    try:
+                        with open(cache_path, 'r', encoding='utf-8') as f:
+                            old = json.load(f)
+                        old_enriched = old.get('enriched_date') or old.get('enriched')
+                        for om in old.get('all_matches', []):
+                            fid = str(om.get('FIXTUREID', ''))
+                            if fid:
+                                old_matches[fid] = om
+                    except:
+                        pass
+
+                # 合并：新比赛数据优先，补充旧缓存的富集字段
+                for m in league_filtered:
+                    fid = str(m.get('FIXTUREID', ''))
+                    if fid in old_matches:
+                        old_om = old_matches[fid]
+                        for enrich_key in ['odds_europe', 'odds_asian', 'odds_handicap', 'enriched']:
+                            if enrich_key in old_om:
+                                m[enrich_key] = old_om[enrich_key]
+
                 cache_data = {
                     'league': league, 'date': datetime.now().strftime('%Y-%m-%d %H:%M'),
                     'match_count': len(league_filtered), 'league_id': league_id,
                     'team_ids': final_teams, 'matches_with_scores': with_scores,
                     'all_matches': league_filtered, 'cache_mode': 'precache_all',
                 }
+                if old_enriched:
+                    cache_data['enriched'] = old_enriched
+
+                _backup_cache(cache_path)
                 with open(cache_path, 'w', encoding='utf-8') as f:
                     json.dump(cache_data, f, ensure_ascii=False, indent=2)
                 print('[PRECACHE] {}: {}场（{}场有比分）→ 缓存 ✓'.format(
@@ -758,6 +816,9 @@ def main():
             }
             if old_enriched:
                 cache_data['enriched'] = old_enriched
+
+            # 备份旧缓存
+            _backup_cache(cache_path)
 
             with open(cache_path, 'w', encoding='utf-8') as f:
                 json.dump(cache_data, f, ensure_ascii=False, indent=2)
