@@ -484,19 +484,26 @@ def get_av_w(m):
         return None
 
 
-def match_hist(cache, target_hc, jc_dir, iw_dir, iw_hc_dir=None, strict_jc=False, av_w_range=None):
+def match_hist(cache, target_hc, jc_dir, iw_dir, iw_hc_dir=None, strict_jc=False, av_w_range=None, _stats=None):
     """匹配历史：缺失的数据维度自动降级（不跳过整场比赛）
     
     iw_hc_dir: IW让球方向。不为None时增加IW让球条件。
     strict_jc: 为True时竞彩条件严格匹配（历史无竞彩数据也跳过）
+    _stats: 传入dict则填充过滤原因统计
     """
     if not cache:
         return []
     target = round(target_hc, 2)
     res = []
+    # 统计
+    if _stats is not None:
+        _stats.clear()
+        _stats.update({'total': 0, '无亚盘数据': 0, '亚盘不同': 0, '竞彩不匹配': 0, 'IW不匹配': 0, 'IW让球不匹配': 0, '百家范围过滤': 0, '亚盘匹配': 0})
     for m in cache.get('all_matches', []):
         if not isinstance(m, dict):
             continue
+        if _stats is not None:
+            _stats['total'] += 1
         # 统一使用odds_asian澳门亚盘终盘匹配（历史终盘 vs 当天亚盘）
         oa = m.get('odds_asian')
         live_val = None
@@ -509,28 +516,38 @@ def match_hist(cache, target_hc, jc_dir, iw_dir, iw_hc_dir=None, strict_jc=False
                 if item == oa[0]:
                     lp = item.get('live_pan', '').replace('↑','').replace('↓','').replace(' ','').strip()
                     live_val = _match_hc_name(lp)
-        if live_val is None or abs(live_val - target) > 0.01:
+        if live_val is None:
+            if _stats is not None: _stats['无亚盘数据'] += 1
             continue
+        if abs(live_val - target) > 0.01:
+            if _stats is not None: _stats['亚盘不同'] += 1
+            continue
+        if _stats is not None:
+            _stats['亚盘匹配'] += 1
         # 竞彩条件：有当日值且有历史值时才比较，否则降级跳过
         if jc_dir is not None:
             hist_jc = get_jc_dir(m)
             if strict_jc:
                 # 严格模式：历史无数据或不匹配都跳过
                 if hist_jc is None or hist_jc != jc_dir:
+                    if _stats is not None: _stats['竞彩不匹配'] += 1
                     continue
             else:
                 # 降级模式：只有历史有数据但不匹配才跳过
                 if hist_jc is not None and hist_jc != jc_dir:
+                    if _stats is not None: _stats['竞彩不匹配'] += 1
                     continue
         # IW条件：同上
         if iw_dir is not None:
             hist_iw = get_iw_dir(m)
             if hist_iw is not None and hist_iw != iw_dir:
+                if _stats is not None: _stats['IW不匹配'] += 1
                 continue
         # IW让球条件（降级兜底时启用）
         if iw_hc_dir is not None:
             hist_iw_hc = get_iw_hc_dir(m)
             if hist_iw_hc is not None and hist_iw_hc != iw_hc_dir:
+                if _stats is not None: _stats['IW让球不匹配'] += 1
                 continue
         # 百家主胜范围过滤（降级后结果太多时启用）
         if av_w_range is not None:
@@ -538,6 +555,7 @@ def match_hist(cache, target_hc, jc_dir, iw_dir, iw_hc_dir=None, strict_jc=False
             if hist_av_w is not None:
                 lo, hi = av_w_range
                 if not (lo <= hist_av_w <= hi):
+                    if _stats is not None: _stats['百家范围过滤'] += 1
                     continue
         sc, r = get_score(m)
         # 获取历史比赛的完整4条件值
@@ -638,7 +656,7 @@ def match_hist(cache, target_hc, jc_dir, iw_dir, iw_hc_dir=None, strict_jc=False
     return res
 
 
-def fmt(tm, hist, cache_info, jc_dir, iw_dir, macau_hc_val, macau_hc_name, hc_dir='-', is_fallback=False):
+def fmt(tm, hist, cache_info, jc_dir, iw_dir, macau_hc_val, macau_hc_name, hc_dir='-', is_fallback=False, stats=None):
     home = tm.get('home_team', '?')
     away = tm.get('away_team', '?')
     league = tm.get('league_name', '?')
@@ -649,6 +667,14 @@ def fmt(tm, hist, cache_info, jc_dir, iw_dir, macau_hc_val, macau_hc_name, hc_di
              f'缓存: {cache_info}']
     if not hist or (len(hist) == 1 and 'error' in hist[0]):
         lines.append(f'⚠️ {hist[0]["error"]}' if hist else '无匹配')
+        if stats and stats.get('total', 0) > 0:
+            reasons = []
+            for k in ['无亚盘数据', '亚盘不同', '竞彩不匹配', 'IW不匹配', 'IW让球不匹配', '百家范围过滤']:
+                v = stats.get(k, 0)
+                if v > 0:
+                    reasons.append(f'{k}:{v}')
+            if reasons:
+                lines.append(f'  过滤原因: {", ".join(reasons)} (共{stats["total"]}场)')
         lines.append('')
         return '\n'.join(lines)
 
@@ -834,7 +860,8 @@ def main():
         if use_fallback:
             # 竞彩稀疏：先严格匹配，0结果则降级兜底
             used_fallback = False
-            hist = match_hist(cd, macau_hc, jc_dir, iw_dir, strict_jc=True)
+            stats = {}
+            hist = match_hist(cd, macau_hc, jc_dir, iw_dir, strict_jc=True, _stats=stats)
             valid = [h for h in hist if 'error' not in h]
             if len(valid) == 0 and iw_dir is not None:
                 # 降级兜底：IW欧赔+IW让球+亚盘
@@ -842,18 +869,22 @@ def main():
                 if iw_hc_dir is None:
                     iw_hc_dir = fetch_iw_handicap_dir(fid)
                 if iw_hc_dir is not None:
-                    hist = match_hist(cd, macau_hc, None, iw_dir, iw_hc_dir, strict_jc=False)
+                    stats2 = {}
+                    hist = match_hist(cd, macau_hc, None, iw_dir, iw_hc_dir, strict_jc=False, _stats=stats2)
                     valid = [h for h in hist if 'error' not in h]
+                    stats = stats2
                     used_fallback = True
                     # 降级后超过10场 → 加百家主胜范围过滤
                     if len(valid) > 10 and today_av_w is not None:
                         lo = math.floor(today_av_w * 10) / 10
                         hi = round(lo + 0.09, 2)
-                        hist2 = match_hist(cd, macau_hc, None, iw_dir, iw_hc_dir, strict_jc=False, av_w_range=(lo, hi))
+                        stats3 = {}
+                        hist2 = match_hist(cd, macau_hc, None, iw_dir, iw_hc_dir, strict_jc=False, av_w_range=(lo, hi), _stats=stats3)
                         valid2 = [h for h in hist2 if 'error' not in h]
                         if len(valid2) > 0:
                             hist = hist2
                             valid = valid2
+                            stats = stats3
                             print(f'[百家{lo:.2f}-{hi:.2f}]', end='')
                     print(f'⬇兜底', end='')
                 else:
@@ -861,13 +892,14 @@ def main():
         else:
             # 竞彩充足：严格匹配
             used_fallback = False
-            hist = match_hist(cd, macau_hc, jc_dir, iw_dir, strict_jc=True)
+            stats = {}
+            hist = match_hist(cd, macau_hc, jc_dir, iw_dir, strict_jc=True, _stats=stats)
             valid = [h for h in hist if 'error' not in h]
 
         print(f'→ {len(valid)}场')
         if len(valid) > 0:
             total_hits += 1
-        outs.append(fmt(tm, hist, ci, jc_dir, iw_dir, macau_hc, macau_hc_name, hc_dir, is_fallback=used_fallback))
+        outs.append(fmt(tm, hist, ci, jc_dir, iw_dir, macau_hc, macau_hc_name, hc_dir, is_fallback=used_fallback, stats=stats if len(valid)==0 else None))
 
     for o in outs:
         print(o)
