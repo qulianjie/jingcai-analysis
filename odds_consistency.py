@@ -160,7 +160,7 @@ def ld(league):
     enriched=d.get('enriched_date')or d.get('enriched')
     if enriched:score+=1000
     ml_cnt=len(d.get('all_matches',[]))
-    if ml_cnt>best%1000:score+=ml_cnt*0.001  # 场数多也加分
+    score+=ml_cnt*0.5  # 场数多也加分(权重提高，防小文件靠精确名取胜)
    except:pass
    if score>best:best=score;cp=os.path.join(CD,fn)
  if not cp or not os.path.exists(cp):return None
