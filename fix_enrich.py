@@ -84,6 +84,15 @@ def fix_match(fid):
                     companies.append({'name': td1, **parsed})
         if companies:
             result['companies'] = companies
+            # 从companies[]提取竞彩(IW/ID/IL/LW/LD/LL)和IW(塞浦路斯)到顶级字段
+            for c in companies:
+                nm = c.get('name', '')
+                if '官' in nm and not result.get('jc'):
+                    result['jc'] = {k: c[k] for k in ('iw','id','il','lw','ld','ll')}
+                    if 'dir' in c: result['jc']['dir'] = c['dir']
+                if '塞浦路斯' in nm and not result.get('iw'):
+                    result['iw'] = {k: c[k] for k in ('iw','id','il','lw','ld','ll')}
+                    if 'dir' in c: result['iw']['dir'] = c['dir']
     except:
         pass
     # 2. 让球页：IW让球 + 竞彩让球
@@ -265,6 +274,12 @@ def fix_cache_file(cache_path, max_workers=10):
             m['odds_europe'] = oe
         if r.get('av') and not oe.get('av'):
             oe['av'] = r['av']
+            updated += 1
+        if r.get('jc') and not isinstance(oe.get('jc'), dict):
+            oe['jc'] = r['jc']
+            updated += 1
+        if r.get('iw') and not isinstance(oe.get('iw'), dict):
+            oe['iw'] = r['iw']
             updated += 1
         if r.get('companies') and not (isinstance(oe.get('companies'), list) and len(oe['companies']) > 0):
             oe['companies'] = r['companies']
