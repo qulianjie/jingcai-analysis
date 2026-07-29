@@ -864,31 +864,23 @@ def main():
             hist = match_hist(cd, macau_hc, jc_dir, iw_dir, strict_jc=True, _stats=stats)
             valid = [h for h in hist if 'error' not in h]
             if len(valid) == 0 and iw_dir is not None:
-                # 降级兜底：IW欧赔+IW让球+亚盘
-                iw_hc_dir = get_iw_hc_dir_from_today(cd, fid)
-                if iw_hc_dir is None:
-                    iw_hc_dir = fetch_iw_handicap_dir(fid)
-                if iw_hc_dir is not None:
+                # 降级兜底：IW+百家+亚盘
+                used_fallback = True
+                if today_av_w is not None:
+                    lo = math.floor(today_av_w * 10) / 10
+                    hi = round(lo + 0.09, 2)
                     stats2 = {}
-                    hist = match_hist(cd, macau_hc, None, iw_dir, iw_hc_dir, strict_jc=False, _stats=stats2)
+                    hist = match_hist(cd, macau_hc, None, iw_dir, strict_jc=False, av_w_range=(lo, hi), _stats=stats2)
                     valid = [h for h in hist if 'error' not in h]
                     stats = stats2
-                    used_fallback = True
-                    # 降级后超过10场 → 加百家主胜范围过滤
-                    if len(valid) > 10 and today_av_w is not None:
-                        lo = math.floor(today_av_w * 10) / 10
-                        hi = round(lo + 0.09, 2)
-                        stats3 = {}
-                        hist2 = match_hist(cd, macau_hc, None, iw_dir, iw_hc_dir, strict_jc=False, av_w_range=(lo, hi), _stats=stats3)
-                        valid2 = [h for h in hist2 if 'error' not in h]
-                        if len(valid2) > 0:
-                            hist = hist2
-                            valid = valid2
-                            stats = stats3
-                            print(f'[百家{lo:.2f}-{hi:.2f}]', end='')
-                    print(f'⬇兜底', end='')
+                    print(f'[百家{lo:.2f}-{hi:.2f}]⬇兜底', end='')
                 else:
-                    print(f'缺IW让球', end='')
+                    # 无百家数据时降级到IW+亚盘
+                    stats2 = {}
+                    hist = match_hist(cd, macau_hc, None, iw_dir, strict_jc=False, _stats=stats2)
+                    valid = [h for h in hist if 'error' not in h]
+                    stats = stats2
+                    print(f'⬇兜底(无百家)', end='')
         else:
             # 竞彩充足：严格匹配
             used_fallback = False
