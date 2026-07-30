@@ -165,6 +165,17 @@ def find_cache(league):
         else:
             continue
         fp = os.path.join(CACHE_DIR, fn)
+        # 富集加分+场数权重（防小文件精确名打败大文件富集缓存）
+        try:
+            with open(fp, encoding='utf-8') as _f:
+                _d = json.load(_f)
+            _enriched = _d.get('enriched_date') is not None
+            _cnt = len(_d.get('all_matches', []))
+            if _enriched:
+                score += 1000
+            score += _cnt * 0.5
+        except:
+            pass
         if score > best:
             best = score
             best_fp = fp
