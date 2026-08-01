@@ -372,22 +372,23 @@ def _fetch_match_odds(fid):
             for tr in table.find_all('tr'):
                 tds = tr.find_all('td')
                 if len(tds) < 12: continue
-                td0 = tds[0].get_text().strip()
+                td1 = tds[1].get_text().strip()
                 td2 = tds[2].get_text().strip().replace(chr(160), '')
-                if td0 == '1':
-                    nums = []
-                    for idx in [4, 5, 6, 7, 8, 9]:
-                        val = tds[idx].get_text().strip().replace(chr(160), '')
-                        try: nums.append(float(val))
-                        except: pass
-                    if len(nums) >= 6:
-                        result['odds_handicap'] = {
-                            'jc': {'handicap': td2, 'iw': nums[0], 'id': nums[1], 'il': nums[2],
-                                'lw': nums[3], 'ld': nums[4], 'll': nums[5],
-                                'dir': _odds_direction(nums[:3], nums[3:6])}
-                        }
-                    break
-                if result.get('odds_handicap'): break
+                # 竞彩官方让球：公司名含"官"或"中国"（td0=='1'不可靠，历史页第一行可能是立博等外国公司）
+                if '官' not in td1 and '中国' not in td1:
+                    continue
+                nums = []
+                for idx in [4, 5, 6, 7, 8, 9]:
+                    val = tds[idx].get_text().strip().replace(chr(160), '')
+                    try: nums.append(float(val))
+                    except: pass
+                if len(nums) >= 6:
+                    result['odds_handicap'] = {
+                        'jc': {'handicap': td2, 'iw': nums[0], 'id': nums[1], 'il': nums[2],
+                            'lw': nums[3], 'ld': nums[4], 'll': nums[5],
+                            'dir': _odds_direction(nums[:3], nums[3:6])}
+                    }
+                break
             if result.get('odds_handicap'): break
     except Exception as e:
         import traceback
