@@ -800,11 +800,11 @@ def main():
                     iw_dir = get_iw_dir(m)
                     hc_dir = get_hc_dir(m)
                     today_av_w = get_av_w(m)
-                    # 从odds_asian澳门亚盘终盘取当天亚盘值
+                    # 从odds_asian澳门亚盘终盘取当天亚盘值（统一live_pan，与match_hist一致）
                     oa = m.get('odds_asian')
                     if isinstance(oa, list):
                         for item in oa:
-                            lp = item.get('init_pan', '').replace('↑','').replace('↓','').replace(' ','').strip()
+                            lp = item.get('live_pan', '').replace('↑','').replace('↓','').replace(' ','').strip()
                             if '门' in item.get('name', '') and lp:
                                 macau_hc = _match_hc_name(lp)
                                 macau_hc_name = lp
