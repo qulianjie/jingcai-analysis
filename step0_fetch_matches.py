@@ -78,13 +78,17 @@ def fetch_trade_500(date_str):
             'Upgrade-Insecure-Requests': '1',
         }
         
-        # NOTE: trade.500.com returns EMPTY data-fixtureid/homeid/awayid 
-        # when date= parameter is passed. Always fetch without date param,
-        # then filter matches by data-processdate.
+        # 2026-08-03 实测修正：date= 参数有效（返回该日期场次且带 fixtureid，
+        # 如 date=2026-08-02 返回14场全 processdate=2026-08-02）。
+        # 旧注释称"带 date 返回空 fixtureid"已过时。历史日期必须带 date 参数，
+        # 否则只返回当前售卖日场次，过滤后为 0 场（补昨天/历史日期抓不到）。
         session = requests.Session()
         session.headers.update(headers)
         session.get('https://trade.500.com/', timeout=10)
-        resp = session.get('https://trade.500.com/jczq/?playid=269&g=2', timeout=15)
+        url = 'https://trade.500.com/jczq/?playid=269&g=2'
+        if date_str:
+            url += '&date=' + date_str
+        resp = session.get(url, timeout=15)
         html = resp.content.decode('gbk', errors='ignore')
         
         tr_blocks = re.findall(r'<tr[^>]*data-fixtureid="[^"]*"[^>]*>', html, re.DOTALL)
