@@ -84,13 +84,21 @@ def _acquire_lock(lock_path, timeout=15):
 
 
 def _is_cache_fresh(cache_path):
-    """检查缓存是否在3天有效期内"""
+    """检查缓存是否在3天有效期内（0场缓存不算有效，防空缓存跳过爬取）"""
     if not os.path.exists(cache_path):
         return False
     try:
         mtime = os.path.getmtime(cache_path)
         age_days = (time.time() - mtime) / 86400
-        return age_days < CACHE_TTL_DAYS
+        if age_days >= CACHE_TTL_DAYS:
+            return False
+        # 0场缓存不算有效（爬取失败产生的空缓存，必须重爬）
+        with open(cache_path, 'r', encoding='utf-8') as f:
+            d = json.load(f)
+        ms = d.get('all_matches', [])
+        if not ms:
+            return False
+        return True
     except:
         return False
 
