@@ -157,7 +157,14 @@ log.info('获取整个联赛比赛...')
 _loaded_from_cache = False
 _cached_league_matches = None
 if LEAGUE_CACHE_DIR:
+    _LEAGUE_ALIAS = {
+        '韩职': 'K1联赛', 'K1联赛': '韩职',
+        '美职足': '美职联', '美职联': '美职足',
+        '英联赛杯': '英联杯', '英联杯': '英联赛杯',
+    }
     cache_path = os.path.join(LEAGUE_CACHE_DIR, '{}.json'.format(LEAGUE))
+    if not os.path.exists(cache_path) and LEAGUE in _LEAGUE_ALIAS:
+        cache_path = os.path.join(LEAGUE_CACHE_DIR, '{}.json'.format(_LEAGUE_ALIAS[LEAGUE]))
     if os.path.exists(cache_path):
         try:
             with open(cache_path, 'r', encoding='utf-8') as f:

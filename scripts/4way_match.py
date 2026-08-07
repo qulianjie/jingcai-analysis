@@ -306,6 +306,8 @@ def find_cache(league):
         'K1联赛': '韩职',
         '美职足': '美职联',
         '美职联': '美职足',
+        '英联赛杯': '英联杯',
+        '英联杯': '英联赛杯',
     }
     league = ALIAS.get(league, league)
     fs = [f for f in os.listdir(CACHE_DIR) if f.endswith('.json')]

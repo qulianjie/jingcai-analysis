@@ -147,7 +147,11 @@ def find_cache(league):
     # 联赛名别名映射
     ALIAS = {
         '韩职': 'K1联赛',
+        'K1联赛': '韩职',
         '美职足': '美职联',
+        '美职联': '美职足',
+        '英联赛杯': '英联杯',
+        '英联杯': '英联赛杯',
     }
     league = ALIAS.get(league, league)
     best = 0

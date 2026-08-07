@@ -145,6 +145,10 @@ def fo(fid):
 
 def ld(league):
  cp=None;best=0;lk=''
+ # 联赛名别名映射（500.com名 → 缓存文件名）
+ ALIAS={'韩职':'K1联赛','K1联赛':'韩职','美职足':'美职联','美职联':'美职足',
+        '英联赛杯':'英联杯','英联杯':'英联赛杯'}
+ league=ALIAS.get(league,league)
  if os.path.exists(CD):
   for fn in os.listdir(CD):
    if not fn.endswith('.json'):continue
