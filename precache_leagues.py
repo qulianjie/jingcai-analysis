@@ -655,6 +655,11 @@ def main():
                             if enrich_key in old_om:
                                 m[enrich_key] = old_om[enrich_key]
 
+                # ⚠️ 爬取结果为空保护：已有非空缓存时禁止覆写为空（2026-08-07 修复）
+                if len(league_filtered) == 0 and old_matches:
+                    print('[PRECACHE] ⚠️ {}: 爬取结果为空（旧缓存{}场），保留旧缓存，跳过覆写'.format(league, len(old_matches)))
+                    continue
+
                 cache_data = {
                     'league': league, 'date': datetime.now().strftime('%Y-%m-%d %H:%M'),
                     'match_count': len(league_filtered), 'league_id': league_id,
@@ -805,6 +810,11 @@ def main():
                     for enrich_key in ['odds_europe', 'odds_asian', 'odds_handicap', 'enriched']:
                         if enrich_key in old_om:
                             m[enrich_key] = old_om[enrich_key]
+
+            # ⚠️ 爬取结果为空保护：已有非空缓存时禁止覆写为空（2026-08-07 修复）
+            if len(league_filtered) == 0 and old_matches:
+                print('[PRECACHE] ⚠️ {}: 爬取结果为空（旧缓存{}场），保留旧缓存，跳过覆写'.format(league, len(old_matches)))
+                continue
 
             cache_data = {
                 'league': league,
