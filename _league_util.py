@@ -134,6 +134,42 @@ def get_league_id(name):
     return None
 
 
+def _safe_substring_match(a, b):
+    """安全子串匹配：仅当短串是长串的前缀/后缀，且多余部分不含级别词时匹配。
+    防止 '俄超' in '白俄超'、'日职' in '日职乙' 这类跨级别/跨国家误判。
+    """
+    if not a or not b:
+        return False
+    if len(a) < 2 or len(b) < 2:
+        return False
+    if a not in b and b not in a:
+        return False
+    # 确定长短
+    if len(a) >= len(b):
+        long_s, short_s = a, b
+    else:
+        long_s, short_s = b, a
+    # 短串必须是长串的前缀或后缀（防 '俄超' 出现在 '白俄超' 中间/被包夹）
+    if not (long_s.startswith(short_s) or long_s.endswith(short_s)):
+        return False
+    if long_s.startswith(short_s):
+        extra = long_s[len(short_s):]
+    else:
+        extra = long_s[:len(long_s)-len(short_s)]
+    # 多余部分是级别词/青年队/杯赛词/国家限定词 → 拒绝
+    import re
+    if re.search(r'(甲|乙|丙|丁|U[0-9]+|[0-9]+|女|杯|附|预|外|青年|预备|B队|二队|三队)$', extra):
+        return False
+    # 国家/地区限定词前缀（防 '白俄超'→'俄超'、'北爱超'→'爱超'、'乌克杯'→'克杯'）
+    COUNTRY_PREFIX = ('白', '北', '乌', '捷', '苏', '英', '日', '韩', '瑞', '俄',
+                      '爱', '克', '格', '冰', '芬', '保', '罗', '以', '阿', '巴',
+                      '美', '欧', '中', '澳', '荷', '比', '丹', '挪', '西', '德',
+                      '意', '法', '葡', '东南亚', '北欧', '非')
+    if extra in COUNTRY_PREFIX:
+        return False
+    return True
+
+
 def _league_match(src_league, target_league):
     """模糊匹配两个联赛名称是否指向同一个联赛
     
@@ -162,18 +198,16 @@ def _league_match(src_league, target_league):
         for alias in league_map[tgt]:
             if alias == src:
                 return True
-            if len(src) >= 2 and len(alias) >= 2:
-                if src in alias or alias in src:
-                    return True
+            if _safe_substring_match(src, alias):
+                return True
     
     # 反向：src 的别名列表里是否包含 target
     if src in league_map:
         for alias in league_map[src]:
             if alias == tgt:
                 return True
-            if len(tgt) >= 2 and len(alias) >= 2:
-                if tgt in alias or alias in tgt:
-                    return True
+            if _safe_substring_match(tgt, alias):
+                return True
     
     # 全面搜索：检查两个名称是否在同一个映射组中
     if tgt in league_map and src in league_map:
