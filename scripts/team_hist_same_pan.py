@@ -1,0 +1,341 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+team_hist_same_pan.py — 当天比赛 主/客场队 同终盘澳门亚盘 历史统计
+
+对当天每场比赛：
+  主队线：缓存中该队作为【主队】(HOMETEAMSXNAME) 且 澳门亚盘终盘 == 当天盘口 的历史比赛
+  客队线：缓存中该队作为【客队】(AWAYTEAMSXNAME) 且 澳门亚盘终盘 == 当天盘口 的历史比赛
+输出：赛果分布汇总 + 逐场比分串（✅❌➖）
+
+匹配口径（用户确认 2026-08-15）：
+  - 亚盘数值 ±0.01 精确匹配（非盘口名子串）
+  - 全量历史（不限最近N场）
+  - 同联赛缓存
+  - 输出：汇总分布 + 比分串（4way 风格）
+"""
+import json
+import os
+import re
+import sys
+import glob
+
+CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'league_cache')
+
+ALIAS = {
+    '韩职': 'K1联赛', 'K1联赛': '韩职',
+    '美职足': '美职联', '美职联': '美职足',
+    '英联赛杯': '英联杯', '英联杯': '英联赛杯',
+}
+
+_HANDICAP_ITEMS = sorted([
+    ('受三球半', 3.5), ('受三球', 3.0), ('受两球半/三球', 2.75), ('受两球半', 2.5),
+    ('受两球/两球半', 2.25), ('受两球', 2.0), ('受球半/两球', 1.75), ('受球半', 1.5),
+    ('受一球/球半', 1.25), ('受一球', 1.0), ('受半球/一球', 0.75), ('受半球', 0.5),
+    ('受平手/半球', 0.25), ('平手', 0.0),
+    ('平手/半球', -0.25), ('平半', -0.25), ('半球', -0.5),
+    ('半球/一球', -0.75), ('一球', -1.0), ('一球/球半', -1.25), ('球半', -1.5),
+    ('球半/两球', -1.75), ('两球', -2.0), ('两球/两球半', -2.25), ('两球半', -2.5),
+    ('两球半/三球', -2.75), ('三球', -3.0), ('三球/三球半', -3.25), ('三球半', -3.5),
+], key=lambda x: -len(x[0]))
+
+
+def _match_hc_name(txt):
+    if not txt:
+        return None
+    txt = txt.replace('\xa0', '').replace('↑', '').replace('↓', '').strip()
+    for name, val in _HANDICAP_ITEMS:
+        if name in txt:
+            return val
+    try:
+        return float(txt)
+    except Exception:
+        return None
+
+
+def find_cache(league):
+    league = ALIAS.get(league, league)
+    candidates = []
+    for fn in glob.glob(os.path.join(CACHE_DIR, '*.json')):
+        base = os.path.basename(fn)[:-5]
+        if base == league:
+            score = 100
+        elif base.startswith(league):
+            score = 50
+        elif league in base:
+            score = 10
+        else:
+            continue
+        try:
+            with open(fn, encoding='utf-8') as f:
+                d = json.load(f)
+            cnt = len(d.get('all_matches', []))
+            if d.get('enriched_date') is not None:
+                score += 1000
+            score += cnt * 0.5
+        except Exception:
+            cnt = 0
+        candidates.append((score, cnt, fn))
+    if not candidates:
+        return None, 0
+    candidates.sort(key=lambda x: -x[0])
+    return candidates[0][2], candidates[0][1]
+
+
+def get_macau_live_val(m):
+    oa = m.get('odds_asian')
+    if not isinstance(oa, list) or not oa:
+        return None
+    for item in oa:
+        if '门' in item.get('name', ''):
+            return _match_hc_name(item.get('live_pan', ''))
+    return _match_hc_name(oa[0].get('live_pan', ''))
+
+
+# 队名译名映射（matches_data trade短名 → 500.com缓存名）
+TEAM_ALIAS = {
+    '基尔': '荷尔斯泰因', '不伦瑞克': '布伦瑞克', '埃夫斯堡': '埃尔夫斯堡',
+    '韦斯特罗斯': '瓦斯特拉斯', '达曼协定': '达曼协作', '哈马赫费萨利': '费萨里',
+    '新未来SC': '新未来城体育', '鹿斯巴达': '鹿特丹斯巴达', '赫拉克勒': '赫拉克勒斯',
+    '登博思': '邓伯什', '阿纳西': '昂纳西', '里斯本': '葡萄牙体育',
+    '瓦萨': 'VPS瓦萨', 'TPS图尔': 'TPS图尔库',
+    '秋田闪电': '秋田蓝闪电',
+}
+
+
+def fuzzy_team(name, cache_names):
+    """队名模糊匹配：精确 → 别名 → 子串；返回匹配到的缓存名或 None"""
+    if not name:
+        return None
+    if name in cache_names:
+        return name
+    alias = TEAM_ALIAS.get(name)
+    if alias and alias in cache_names:
+        return alias
+    for cn in cache_names:
+        if name and cn and (name in cn or cn in name):
+            return cn
+    return None
+
+
+def fetch_macau_handicap(fid):
+    if not fid:
+        return None
+    import requests
+    from bs4 import BeautifulSoup
+    url = f'https://odds.500.com/fenxi/yazhi-{fid}.shtml'
+    h = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+         'Accept-Language': 'zh-CN,zh;q=0.9'}
+    try:
+        r = requests.get(url, headers=h, timeout=10)
+        r.encoding = 'gbk'
+        sp = BeautifulSoup(r.text, 'html.parser')
+        for t in sp.find_all('table'):
+            for tr in t.find_all('tr'):
+                tds = tr.find_all('td')
+                if len(tds) < 6:
+                    continue
+                nm = tds[0].get_text().strip()
+                if '门' not in nm:
+                    nm = tds[1].get_text().strip() if len(tds) > 1 else ''
+                if '门' not in nm:
+                    continue
+                for idx in [2, 8]:
+                    if idx >= len(tds):
+                        continue
+                    inner = tds[idx].find('table', class_='pl_table_data') if tds[idx] else None
+                    if not inner:
+                        continue
+                    for cell in inner.find_all('td'):
+                        ref = cell.get('ref', '')
+                        if ref:
+                            try:
+                                return float(ref)
+                            except Exception:
+                                continue
+                continue
+    except Exception:
+        return None
+    return None
+
+
+def pan_name(val):
+    """数值 → 盘口名（与4way一致：半球(-0.5)/受半球(0.5)/平手(0.0)）"""
+    if val is None:
+        return '?'
+    for name, v in _HANDICAP_ITEMS:
+        if abs(v - val) < 0.001:
+            return f'{name}({val:+.2f})'.replace('+0.00', '0.0').replace('+', '')
+    return f'{val:.2f}' 
+
+
+def get_result(m):
+    res = None
+    comp = m.get('_computed')
+    if isinstance(comp, dict):
+        res = comp.get('match_result')
+    if res:
+        return res
+    hs, as_ = m.get('HOMESCORE'), m.get('AWAYSCORE')
+    if hs is None or as_ is None:
+        return None
+    return '主胜' if int(hs) > int(as_) else ('平局' if int(hs) == int(as_) else '客胜')
+
+
+def get_macau_pan_str(m):
+    """澳门亚盘 初盘→终盘 文本（如 平手→半球 升）"""
+    oa = m.get('odds_asian')
+    if not isinstance(oa, list) or not oa:
+        return ''
+    item = None
+    for x in oa:
+        if '门' in x.get('name', ''):
+            item = x
+            break
+    if item is None:
+        item = oa[0]
+    init_p = (item.get('init_pan') or '').replace('↑', '').replace('↓', '').strip()
+    live_p = (item.get('live_pan') or '').replace('↑', '').replace('↓', '').strip()
+    if not init_p and not live_p:
+        return ''
+    if init_p == live_p:
+        return f'亚盘 {init_p}'
+    return f'亚盘 {init_p}→{live_p}'
+
+
+def fmt_score(m):
+    hs, as_ = m.get('HOMESCORE'), m.get('AWAYSCORE')
+    if hs is None or as_ is None:
+        return None
+    res = get_result(m)
+    mark = '✅' if res == '主胜' else ('➖' if res == '平局' else '❌')
+    date = str(m.get('MATCHDATE', m.get('VSDATE', '')))[:10]
+    home = m.get('HOMETEAMSXNAME', '?')
+    away = m.get('AWAYTEAMSXNAME', '?')
+    pan = get_macau_pan_str(m)
+    return f"  [{date}] {home} vs {away}  {int(hs)}:{int(as_)} {mark}  {pan}"
+
+
+def summarize(hits):
+    n = len(hits)
+    if n == 0:
+        return '0场'
+    wins = draws = losses = 0
+    for m in hits:
+        r = get_result(m)
+        if r == '主胜':
+            wins += 1
+        elif r == '平局':
+            draws += 1
+        elif r == '客胜':
+            losses += 1
+    return f'{n}场 主胜{wins} 平{draws} 客胜{losses}'
+
+
+def main():
+    date = None
+    out_path = None
+    args = sys.argv[1:]
+    for i, a in enumerate(args):
+        if a == '--date' and i + 1 < len(args):
+            date = args[i + 1]
+        elif a == '--out' and i + 1 < len(args):
+            out_path = args[i + 1]
+    if not date:
+        from datetime import datetime
+        date = datetime.now().strftime('%Y-%m-%d')
+
+    md_path = os.path.join('tasks', date, 'matches_data.json')
+    if not os.path.exists(md_path):
+        print(f'[ERR] 未找到 {md_path}，请先跑 step0_fetch_matches.py')
+        sys.exit(1)
+    with open(md_path, encoding='utf-8') as f:
+        md = json.load(f)
+
+    matches = []
+    for wk, g in md.get('groups', {}).items():
+        for m in g.get('matches', []):
+            matches.append(m)
+
+    print(f'[DATE] {date}  共 {len(matches)} 场')
+    print()
+
+    lines = []
+    for i, m in enumerate(matches, 1):
+        num = m.get('matchnum', f'{i}')
+        home = m.get('home', '?')
+        away = m.get('away', '?')
+        league = m.get('league', '?')
+        fid = m.get('fid', '')
+
+        hc = fetch_macau_handicap(fid)
+        if hc is None:
+            lines.append(f'[{num}] {home} vs {away} ({league}) FID={fid} [ERR] 澳门亚盘获取失败')
+            lines.append('')
+            continue
+
+        cache_path, cache_cnt = find_cache(league)
+        if not cache_path or cache_cnt == 0:
+            lines.append(f'[{num}] {home} vs {away} ({league}) 澳门={pan_name(hc)} [ERR] 无缓存({league})')
+            lines.append('')
+            continue
+
+        with open(cache_path, encoding='utf-8') as f:
+            cd = json.load(f)
+        allm = cd.get('all_matches', [])
+        cache_names = set()
+        for x in allm:
+            cache_names.add(x.get('HOMETEAMSXNAME', ''))
+            cache_names.add(x.get('AWAYTEAMSXNAME', ''))
+        cache_names.discard('')
+
+        home_cn = fuzzy_team(home, cache_names)
+        away_cn = fuzzy_team(away, cache_names)
+
+        def _sort_key(x):
+            d = str(x.get('MATCHDATE', x.get('VSDATE', '')))[:10]
+            return d
+
+        home_hits = []
+        away_hits = []
+        for x in allm:
+            hc_x = get_macau_live_val(x)
+            if hc_x is None or abs(hc_x - hc) > 0.01:
+                continue
+            if home_cn and x.get('HOMETEAMSXNAME', '') == home_cn:
+                home_hits.append(x)
+            if away_cn and x.get('AWAYTEAMSXNAME', '') == away_cn:
+                away_hits.append(x)
+        home_hits.sort(key=_sort_key, reverse=True)
+        away_hits.sort(key=_sort_key, reverse=True)
+
+        lines.append(f'[{num}] {home} vs {away} ({league}) 澳门终盘={pan_name(hc)}')
+        lines.append(f'  缓存: {os.path.basename(cache_path)} ({cache_cnt}场)')
+        if home_cn:
+            lines.append(f'  主队 {home}->{home_cn} (主场+同盘) {summarize(home_hits)}')
+            for x in home_hits:
+                s = fmt_score(x)
+                if s:
+                    lines.append(s)
+        else:
+            lines.append(f'  主队 {home} [ERR] 缓存无此队名')
+        if away_cn:
+            lines.append(f'  客队 {away}->{away_cn} (客场+同盘) {summarize(away_hits)}')
+            for x in away_hits:
+                s = fmt_score(x)
+                if s:
+                    lines.append(s)
+        else:
+            lines.append(f'  客队 {away} [ERR] 缓存无此队名')
+        lines.append('')
+
+    out = '\n'.join(lines)
+    print(out)
+    if out_path:
+        with open(out_path, 'w', encoding='utf-8') as f:
+            f.write(out + '\n')
+        print(f'[FILE] {out_path}')
+
+
+if __name__ == '__main__':
+    main()

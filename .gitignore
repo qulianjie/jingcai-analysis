@@ -1,6 +1,7 @@
 # Generated data
 tasks/
 data/
+!data/league_cache_backup/
 data_export/
 learnings/
 test_cache/
