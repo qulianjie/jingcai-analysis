@@ -100,11 +100,32 @@ TEAM_ALIAS = {
     '登博思': '邓伯什', '阿纳西': '昂纳西', '里斯本': '葡萄牙体育',
     '瓦萨': 'VPS瓦萨', 'TPS图尔': 'TPS图尔库',
     '秋田闪电': '秋田蓝闪电',
+    # 2026-08-15 日韩/欧洲队名模糊搜索修复
+    '首尔FC': 'FC首尔', '东京FC': 'FC东京', '浦项制铁': '浦项铁人',
+    '赛哈特海湾': '塞哈特海湾', '奥斯KFUM': 'KFUM奥斯陆',
+    '阿尔维卡': '艾华卡', '塞伊奈': '塞那乔其',
+    '帕梅拉斯': '帕尔梅拉斯', '穆拜赖兹征服': '哈萨征服',
+    '赫塔费': '赫塔菲',
+    # 2026-08-16 samepan ERR 译名变体修复
+    '鸟栖沙岩': '鸟栖砂岩', '布鲁马波': '布洛马波卡纳', '厄格里特': '奥尔格里特',
+    '佐加顿斯': '尤尔加登', '国际图尔': '图尔库国际', '葡国民': '马德拉国民',
+    '桑纳菲': '桑德菲杰', '摩雷伦斯': '莫雷拉人', '吉维森特': '吉尔维森特',
 }
 
 
+def _fc_swap(name):
+    """FC 前后颠倒变体：首尔FC <-> FC首尔；返回候选名列表"""
+    cands = []
+    up = name.upper()
+    if up.endswith('FC') and len(name) > 2:
+        cands.append('FC' + name[:-2])
+    if up.startswith('FC') and len(name) > 2:
+        cands.append(name[2:] + 'FC')
+    return cands
+
+
 def fuzzy_team(name, cache_names):
-    """队名模糊匹配：精确 → 别名 → 子串；返回匹配到的缓存名或 None"""
+    """队名模糊匹配：精确 → 别名 → FC颠倒 → 子串；返回匹配到的缓存名或 None"""
     if not name:
         return None
     if name in cache_names:
@@ -112,6 +133,9 @@ def fuzzy_team(name, cache_names):
     alias = TEAM_ALIAS.get(name)
     if alias and alias in cache_names:
         return alias
+    for cand in _fc_swap(name):
+        if cand in cache_names:
+            return cand
     for cn in cache_names:
         if name and cn and (name in cn or cn in name):
             return cn
