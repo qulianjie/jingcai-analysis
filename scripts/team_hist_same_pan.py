@@ -113,6 +113,9 @@ TEAM_ALIAS = {
     # 2026-08-17 samepan ERR 译名变体修复
     '里莫': '雷莫', '哈尔姆斯': '哈姆斯塔德', '加的夫城': '卡迪夫城',
     '雷克斯': '雷克瑟姆', '卡萨皮亚': '卡萨比亚',
+    # 2026-08-18 samepan ERR 译名变体修复
+    '里瓦达维亚独立': '门多萨独立', '索列夫': '索非亚列夫斯基',
+    '萨迪纳摩': '萨格勒布迪纳摩',
 }
 
 
@@ -140,7 +143,8 @@ def fuzzy_team(name, cache_names):
         if cand in cache_names:
             return cand
     for cn in cache_names:
-        if name and cn and (name in cn or cn in name):
+        # 前缀/后缀匹配（防中间子串误匹配：维京→戈塔维京人、里昂→洛里昂）
+        if name and cn and (cn.startswith(name) or name.startswith(cn)):
             return cn
     return None
 
