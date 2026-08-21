@@ -710,6 +710,8 @@ def fmt(tm, hist, cache_info, jc_dir, iw_dir, macau_hc_val, macau_hc_name, hc_di
             return f'    {label} 终:{live_str}  ←{ml}' if live_str != '-' else ''
         return f'    {label} {d} 初:{init_str} → 终:{live_str}  ←{ml}'
 
+    # 2026-08-21 用户要求：历史匹配按时间正序（旧→新）排序
+    hist = sorted(hist, key=lambda h: str(h.get('date', ''))[:10])
     n = len(hist)
     cnt = Counter()
     for h in hist:

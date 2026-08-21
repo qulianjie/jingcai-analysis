@@ -342,8 +342,8 @@ def main():
                 home_hits.append(x)
             if away_cn and x.get('AWAYTEAMSXNAME', '') == away_cn:
                 away_hits.append(x)
-        home_hits.sort(key=_sort_key, reverse=True)
-        away_hits.sort(key=_sort_key, reverse=True)
+        home_hits.sort(key=_sort_key)  # 2026-08-21 正序
+        away_hits.sort(key=_sort_key)  # 2026-08-21 正序
 
         lines.append(f'[{num}] {home} vs {away} ({league}) 澳门终盘={pan_name(hc)}')
         lines.append(f'  缓存: {os.path.basename(cache_path)} ({cache_cnt}场)')
