@@ -70,7 +70,7 @@ def find_cache(league):
             with open(fn, encoding='utf-8') as f:
                 d = json.load(f)
             cnt = len(d.get('all_matches', []))
-            if d.get('enriched_date') is not None:
+            if d.get('enriched'):
                 score += 1000
             score += cnt * 0.5
         except Exception:
@@ -122,6 +122,8 @@ TEAM_ALIAS = {
     '长崎航海': '长崎成功丸', '胡巴尔卡德西亚': '胡拜尔库迪西亚',
     '埃因FC': 'FC埃因霍温',
     # 2026-08-23 samepan ERR 译名变体修复
+    # 2026-08-26 samepan ERR 译名变体修复
+    '蔚山现代': '蔚山HD',
     '弗洛西诺': '弗罗西诺内',
     # 2026-08-23 samepan ERR 译名变体修复(2)
     '盖斯': '哥德堡盖斯',

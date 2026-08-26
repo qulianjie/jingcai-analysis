@@ -173,7 +173,7 @@ def find_cache(league):
         try:
             with open(fp, encoding='utf-8') as _f:
                 _d = json.load(_f)
-            _enriched = _d.get('enriched_date') is not None
+            _enriched = bool(_d.get('enriched'))
             _cnt = len(_d.get('all_matches', []))
             if _enriched:
                 score += 1000
