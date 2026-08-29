@@ -795,52 +795,58 @@ def main():
         macau_hc = None
         macau_hc_name = ''
         today_av_w = None
+        cache_jc_dir = cache_iw_dir = cache_hc_dir = cache_av_w = None
+        cache_macau = None
+        cache_macau_name = ''
 
+        # 🚨 2026-08-29 修复：临场盘口/赔率频繁波动，实时数据一律实时抓取优先，缓存仅兜底
+        #    （原逻辑缓存优先，015 伯恩茅斯 降盘 -0.5→-0.25 后仍用 matches_data.json 旧盘匹配，用户纠正）
         if cd:
-            today_av_w = None
             for m in cd.get('all_matches', []):
                 if str(m.get('FIXTUREID', '')) == str(fid):
-                    jc_dir = get_jc_dir(m)
-                    iw_dir = get_iw_dir(m)
-                    hc_dir = get_hc_dir(m)
-                    today_av_w = get_av_w(m)
-                    # 从odds_asian澳门亚盘终盘取当天亚盘值（统一live_pan，与match_hist一致）
+                    cache_jc_dir = get_jc_dir(m)
+                    cache_iw_dir = get_iw_dir(m)
+                    cache_hc_dir = get_hc_dir(m)
+                    cache_av_w = get_av_w(m)
+                    # 缓存澳门亚盘（仅兜底）
                     oa = m.get('odds_asian')
                     if isinstance(oa, list):
                         for item in oa:
                             lp = item.get('live_pan', '').replace('↑','').replace('↓','').replace(' ','').strip()
                             if '门' in item.get('name', '') and lp:
-                                macau_hc = _match_hc_name(lp)
-                                macau_hc_name = lp
+                                cache_macau = _match_hc_name(lp)
+                                cache_macau_name = lp
                                 break
                             if item == oa[0] and lp:
-                                macau_hc = _match_hc_name(lp)
-                                macau_hc_name = lp
+                                cache_macau = _match_hc_name(lp)
+                                cache_macau_name = lp
                                 break
                     break
 
-        # 无缓存澳门亚盘 → 实时抓取
-        if macau_hc is None:
-            macau_hc = fetch_macau_handicap(fid)
+        # 实时抓取澳门亚盘（失败 → 缓存兜底）
+        macau_hc = fetch_macau_handicap(fid)
+        if macau_hc is not None:
             for name, val in _HANDICAP_ITEMS:
                 if val == macau_hc:
                     macau_hc_name = name
                     break
+            macau_hc_name = macau_hc_name or str(macau_hc)
+        else:
+            macau_hc = cache_macau
+            macau_hc_name = cache_macau_name
             if macau_hc is None:
                 macau_hc_name = '未获取到'
-            else:
-                macau_hc_name = macau_hc_name or str(macau_hc)
 
-        # 无缓存盘路 → 实时抓取
+        # 实时抓取盘路（失败 → 缓存兜底）
+        jc_dir, iw_dir = fetch_odds_dirs(fid)
+        src = '实时'
         if jc_dir is None or iw_dir is None:
-            jc_dir, iw_dir = fetch_odds_dirs(fid)
-            src = '实时'
-        else:
-            src = '缓存'
-        if hc_dir is None:
-            hc_dir = fetch_handicap_dir(fid)
-        if today_av_w is None:
-            today_av_w = fetch_av_w(fid)
+            jc_dir = jc_dir or cache_jc_dir
+            iw_dir = iw_dir or cache_iw_dir
+            if jc_dir is not None or iw_dir is not None:
+                src = '缓存兜底'
+        hc_dir = fetch_handicap_dir(fid) or cache_hc_dir
+        today_av_w = fetch_av_w(fid) or cache_av_w
 
         print(f'{src} jc={jc_dir} iw={iw_dir} 让球={hc_dir} 澳门={macau_hc_name}({macau_hc})', end=' ')
         sys.stdout.flush()
