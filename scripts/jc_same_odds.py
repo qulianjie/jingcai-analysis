@@ -86,6 +86,10 @@ def fetch_same_odds(win, draw, lost, fid):
     h['Referer'] = referer
     params = {'cid': '1', 'win': win, 'draw': draw, 'lost': lost, 'id': str(fid), 'mid': '0'}
     r = requests.get(url, params=params, headers=h, timeout=15)
+    text = r.text.strip()
+    if not text:
+        # 500.com 对无匹配的赔率组合返回空 body（与 {"counts":[0,0,0]} 等价），非限流/错误
+        return {'counts': [0, 0, 0], 'match': {}, 'row': []}
     return r.json()
 
 
