@@ -115,7 +115,7 @@ def fetch_handicap_odds(fid):
         return None, None, None, None
 
 def fetch_macau_hc(fid):
-    """抓取当天澳门亚盘 HANDICAPLINE"""
+    """抓取当天威廉希尔亚盘 HANDICAPLINE"""
     import requests
     from bs4 import BeautifulSoup
     h = {'User-Agent': 'Mozilla/5.0', 'Accept-Language': 'zh-CN,zh;q=0.9', 'Referer': 'https://odds.500.com/'}
@@ -128,7 +128,7 @@ def fetch_macau_hc(fid):
             if len(tds) < 12:
                 continue
             nm = tds[1].get_text().strip()
-            if '门' not in nm:
+            if '威' not in nm:
                 continue
             refs = [i for i in range(len(tds)) if tds[i].get('ref') and re.match(r'^-?[\d.]+$', tds[i].get('ref', ''))]
             if len(refs) < 2:
@@ -273,12 +273,12 @@ def get_hist_odds(m):
 
 
 def get_hist_macau(m):
-    """从缓存中获取历史澳门亚盘终盘值"""
+    """从缓存中获取历史威廉希尔亚盘终盘值"""
     oa = m.get('odds_asian')
     if not isinstance(oa, list):
         return None
     for item in oa:
-        if '门' in item.get('name', ''):
+        if '威' in item.get('name', ''):
             lp = item.get('live_pan', '').replace('↑', '').replace('↓', '').replace(' ', '').strip()
             return match_hc_name(lp)
     if oa:
@@ -308,12 +308,12 @@ def get_hist_hc(m):
 
 
 def get_hist_asian(m):
-    """从缓存提取澳门亚盘初终盘名"""
+    """从缓存提取威廉希尔亚盘初终盘名"""
     oa = m.get('odds_asian')
     if not isinstance(oa, list):
         return '-', '-'
     for item in oa:
-        if '门' in item.get('name', ''):
+        if '威' in item.get('name', ''):
             ip = item.get('init_pan', '-').replace('↑', '').replace('↓', '').replace(' ', '').strip()
             lp = item.get('live_pan', '-').replace('↑', '').replace('↓', '').replace(' ', '').strip()
             return ip, lp
@@ -431,7 +431,7 @@ def main():
         av_label = full_odds_label(av_init, av_live, av_r, av_min_idx)
         jc_label = full_odds_label(jc_init, jc_live, jc_r, jc_min_idx) if jc_live and jc_init else '缺'
         iw_label = full_odds_label(iw_init, iw_live, iw_r, iw_min_idx) if iw_live and iw_init else '缺'
-        print(f'澳门:{macau_ip}→{macau_lp}({macau_val})')
+        print(f'威廉希尔:{macau_ip}→{macau_lp}({macau_val})')
         print(f'  百 {av_label}')
         print(f'  竞 {jc_label}')
         print(f'  IW {iw_label}')

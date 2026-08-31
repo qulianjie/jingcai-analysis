@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 """
 竞彩4条件历史匹配（jingcai-4way-match）
-当天竞彩比赛 → 联赛一致 + 澳门亚盘受让球一致 + 竞彩欧赔盘路一致 + IW欧赔盘路一致 → 历史同场次
+当天竞彩比赛 → 联赛一致 + 威廉希尔亚盘受让球一致 + 竞彩欧赔盘路一致 + IW欧赔盘路一致 → 历史同场次
 
-澳门亚盘（受让球）从 odds.500.com/fenxi/yazhi-{fid}.shtml 实时抓取
+威廉希尔亚盘（受让球）从 odds.500.com/fenxi/yazhi-{fid}.shtml 实时抓取
 竞彩/IW盘路方向从 odds.500.com/fenxi/ouzhi-{fid}.shtml 实时抓取
 
 用法:
@@ -133,7 +133,7 @@ def fetch_av_w(fid):
         return None
 
 def fetch_macau_handicap(fid):
-    """从500.com亚盘页提取澳门亚盘 HANDICAPLINE 数值（ref属性，带正负号）"""
+    """从500.com亚盘页提取威廉希尔亚盘 HANDICAPLINE 数值（ref属性，带正负号）"""
     if not fid:
         return None
     import requests
@@ -150,11 +150,11 @@ def fetch_macau_handicap(fid):
                 tds = tr.find_all('td')
                 if len(tds) < 6:
                     continue
-                # 找澳门公司行
+                # 找威廉希尔公司行
                 nm = tds[0].get_text().strip()
-                if '门' not in nm:
+                if '威' not in nm:
                     nm = tds[1].get_text().strip() if len(tds) > 1 else ''
-                if '门' not in nm:
+                if '威' not in nm:
                     continue
                 # 从内嵌 pl_table_data 中找带 ref 的单元格
                 for idx in [2, 8]:  # 初盘/即时盘
@@ -506,17 +506,18 @@ def match_hist(cache, target_hc, jc_dir, iw_dir, iw_hc_dir=None, strict_jc=False
             continue
         if _stats is not None:
             _stats['total'] += 1
-        # 统一使用odds_asian澳门亚盘终盘匹配（历史终盘 vs 当天亚盘）
+        # 统一使用odds_asian威廉希尔亚盘终盘匹配（历史终盘 vs 当天亚盘）
         oa = m.get('odds_asian')
         live_val = None
         if isinstance(oa, list):
             for item in oa:
-                if '门' in item.get('name', ''):
+                if '威' in item.get('name', ''):
                     lp = item.get('live_pan', '').replace('↑','').replace('↓','').replace(' ','').strip()
                     live_val = _match_hc_name(lp)
                     break
-                if item == oa[0]:
-                    lp = item.get('live_pan', '').replace('↑','').replace('↓','').replace(' ','').strip()
+            else:
+                if oa:
+                    lp = oa[0].get('live_pan', '').replace('↑','').replace('↓','').replace(' ','').strip()
                     live_val = _match_hc_name(lp)
         if live_val is None:
             if _stats is not None: _stats['无亚盘数据'] += 1
@@ -625,18 +626,19 @@ def match_hist(cache, target_hc, jc_dir, iw_dir, iw_hc_dir=None, strict_jc=False
                                 hc_init = f'{iw_v}/{hc_data.get("id","?")}/{hc_data.get("il","?")}'
                                 hc_live = f'{hc_data.get("lw","?")}/{hc_data.get("ld","?")}/{hc_data.get("ll","?")}'
                         break
-        # 亚盘数据（澳门初终盘）
+        # 亚盘数据（威廉希尔初终盘）
         as_init = as_live = '-'
         oa = m.get('odds_asian')
         if isinstance(oa, list):
             for item in oa:
-                if '门' in item.get('name', ''):
+                if '威' in item.get('name', ''):
                     as_init = item.get('init_pan', '-')
                     as_live = item.get('live_pan', '-')
                     break
-                if item == oa[0]:
-                    as_init = item.get('init_pan', '-')
-                    as_live = item.get('live_pan', '-')
+            else:
+                if oa:
+                    as_init = oa[0].get('init_pan', '-')
+                    as_live = oa[0].get('live_pan', '-')
         # 百家初终盘
         av_init = av_live = '-'
         oe_av = oe.get('av') if isinstance(oe, dict) else None
@@ -665,7 +667,7 @@ def fmt(tm, hist, cache_info, jc_dir, iw_dir, macau_hc_val, macau_hc_name, hc_di
     mode_tag = ' ⬇兜底' if is_fallback else ''
     lines = ['═' * 60,
              f'{home} vs {away} ({league}) FID={tm.get("fid","?")}{mode_tag}',
-             f'澳门亚盘: {macau_hc_name}({macau_hc_val})  竞彩盘路:{jc_dir or "-"}  IW盘路:{iw_dir or "-"}  让球:{hc_dir or "-"}',
+             f'威廉希尔亚盘: {macau_hc_name}({macau_hc_val})  竞彩盘路:{jc_dir or "-"}  IW盘路:{iw_dir or "-"}  让球:{hc_dir or "-"}',
              f'缓存: {cache_info}']
     if not hist or (len(hist) == 1 and 'error' in hist[0]):
         lines.append(f'⚠️ {hist[0]["error"]}' if hist else '无匹配')
@@ -790,7 +792,7 @@ def main():
             except:
                 pass
 
-        # 获取3项条件：澳门亚盘HANDICAPLINE、竞彩盘路、IW盘路
+        # 获取3项条件：威廉希尔亚盘HANDICAPLINE、竞彩盘路、IW盘路
         jc_dir = iw_dir = hc_dir = None
         macau_hc = None
         macau_hc_name = ''
@@ -808,22 +810,23 @@ def main():
                     cache_iw_dir = get_iw_dir(m)
                     cache_hc_dir = get_hc_dir(m)
                     cache_av_w = get_av_w(m)
-                    # 缓存澳门亚盘（仅兜底）
+                    # 缓存威廉希尔亚盘（仅兜底）
                     oa = m.get('odds_asian')
                     if isinstance(oa, list):
                         for item in oa:
                             lp = item.get('live_pan', '').replace('↑','').replace('↓','').replace(' ','').strip()
-                            if '门' in item.get('name', '') and lp:
+                            if '威' in item.get('name', '') and lp:
                                 cache_macau = _match_hc_name(lp)
                                 cache_macau_name = lp
                                 break
-                            if item == oa[0] and lp:
-                                cache_macau = _match_hc_name(lp)
-                                cache_macau_name = lp
-                                break
+                        else:
+                            if oa and oa[0].get('live_pan'):
+                                lp0 = oa[0].get('live_pan', '').replace('↑','').replace('↓','').replace(' ','').strip()
+                                cache_macau = _match_hc_name(lp0)
+                                cache_macau_name = lp0
                     break
 
-        # 实时抓取澳门亚盘（失败 → 缓存兜底）
+        # 实时抓取威廉希尔亚盘（失败 → 缓存兜底）
         macau_hc = fetch_macau_handicap(fid)
         if macau_hc is not None:
             for name, val in _HANDICAP_ITEMS:

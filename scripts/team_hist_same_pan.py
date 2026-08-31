@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-team_hist_same_pan.py — 当天比赛 主/客场队 同终盘澳门亚盘 历史统计
+team_hist_same_pan.py — 当天比赛 主/客场队 同终盘威廉希尔亚盘 历史统计
 
 对当天每场比赛：
-  主队线：缓存中该队作为【主队】(HOMETEAMSXNAME) 且 澳门亚盘终盘 == 当天盘口 的历史比赛
-  客队线：缓存中该队作为【客队】(AWAYTEAMSXNAME) 且 澳门亚盘终盘 == 当天盘口 的历史比赛
+  主队线：缓存中该队作为【主队】(HOMETEAMSXNAME) 且 威廉希尔亚盘终盘 == 当天盘口 的历史比赛
+  客队线：缓存中该队作为【客队】(AWAYTEAMSXNAME) 且 威廉希尔亚盘终盘 == 当天盘口 的历史比赛
 输出：赛果分布汇总 + 逐场比分串（✅❌➖）
 
 匹配口径（用户确认 2026-08-15）：
@@ -87,7 +87,7 @@ def get_macau_live_val(m):
     if not isinstance(oa, list) or not oa:
         return None
     for item in oa:
-        if '门' in item.get('name', ''):
+        if '威' in item.get('name', ''):
             return _match_hc_name(item.get('live_pan', ''))
     return _match_hc_name(oa[0].get('live_pan', ''))
 
@@ -198,9 +198,9 @@ def fetch_macau_handicap(fid):
                 if len(tds) < 6:
                     continue
                 nm = tds[0].get_text().strip()
-                if '门' not in nm:
+                if '威' not in nm:
                     nm = tds[1].get_text().strip() if len(tds) > 1 else ''
-                if '门' not in nm:
+                if '威' not in nm:
                     continue
                 for idx in [2, 8]:
                     if idx >= len(tds):
@@ -245,13 +245,13 @@ def get_result(m):
 
 
 def get_macau_pan_str(m):
-    """澳门亚盘 初盘→终盘 文本（如 平手→半球 升）"""
+    """威廉希尔亚盘 初盘→终盘 文本（如 平手→半球 升）"""
     oa = m.get('odds_asian')
     if not isinstance(oa, list) or not oa:
         return ''
     item = None
     for x in oa:
-        if '门' in x.get('name', ''):
+        if '威' in x.get('name', ''):
             item = x
             break
     if item is None:
@@ -332,13 +332,13 @@ def main():
 
         hc = fetch_macau_handicap(fid)
         if hc is None:
-            lines.append(f'[{num}] {home} vs {away} ({league}) FID={fid} [ERR] 澳门亚盘获取失败')
+            lines.append(f'[{num}] {home} vs {away} ({league}) FID={fid} [ERR] 威廉希尔亚盘获取失败')
             lines.append('')
             continue
 
         cache_path, cache_cnt = find_cache(league)
         if not cache_path or cache_cnt == 0:
-            lines.append(f'[{num}] {home} vs {away} ({league}) 澳门={pan_name(hc)} [ERR] 无缓存({league})')
+            lines.append(f'[{num}] {home} vs {away} ({league}) 威廉希尔={pan_name(hc)} [ERR] 无缓存({league})')
             lines.append('')
             continue
 
@@ -371,7 +371,7 @@ def main():
         home_hits.sort(key=_sort_key)  # 2026-08-21 正序
         away_hits.sort(key=_sort_key)  # 2026-08-21 正序
 
-        lines.append(f'[{num}] {home} vs {away} ({league}) 澳门终盘={pan_name(hc)}')
+        lines.append(f'[{num}] {home} vs {away} ({league}) 威廉希尔终盘={pan_name(hc)}')
         lines.append(f'  缓存: {os.path.basename(cache_path)} ({cache_cnt}场)')
         if home_cn:
             lines.append(f'  主队 {home}->{home_cn} (主场+同盘) {summarize(home_hits)}')
