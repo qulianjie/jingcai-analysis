@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-team_hist_same_pan.py — 当天比赛 主/客场队 同终盘威廉希尔亚盘 历史统计
+team_hist_same_pan.py — 当天比赛 主/客场队 同终盘亚盘（澳门优先威廉希尔保底）历史统计
 
 对当天每场比赛：
-  主队线：缓存中该队作为【主队】(HOMETEAMSXNAME) 且 威廉希尔亚盘终盘 == 当天盘口 的历史比赛
-  客队线：缓存中该队作为【客队】(AWAYTEAMSXNAME) 且 威廉希尔亚盘终盘 == 当天盘口 的历史比赛
+  主队线：缓存中该队作为【主队】(HOMETEAMSXNAME) 且 亚盘终盘（澳门优先威廉希尔保底）== 当天盘口 的历史比赛
+  客队线：缓存中该队作为【客队】(AWAYTEAMSXNAME) 且 亚盘终盘（澳门优先威廉希尔保底）== 当天盘口 的历史比赛
 输出：赛果分布汇总 + 逐场比分串（✅❌➖）
 
 匹配口径（用户确认 2026-08-15）：
@@ -87,6 +87,8 @@ def get_macau_live_val(m):
     if not isinstance(oa, list) or not oa:
         return None
     for item in oa:
+        if '门' in item.get('name', ''):
+            return _match_hc_name(item.get('live_pan', ''))
         if '威' in item.get('name', ''):
             return _match_hc_name(item.get('live_pan', ''))
     return _match_hc_name(oa[0].get('live_pan', ''))
@@ -180,7 +182,7 @@ def fuzzy_team(name, cache_names):
     return None
 
 
-def fetch_macau_handicap(fid):
+def _fetch_yazhi_company_hc(fid, kw):
     if not fid:
         return None
     import requests
@@ -198,9 +200,9 @@ def fetch_macau_handicap(fid):
                 if len(tds) < 6:
                     continue
                 nm = tds[0].get_text().strip()
-                if '威' not in nm:
+                if kw not in nm:
                     nm = tds[1].get_text().strip() if len(tds) > 1 else ''
-                if '威' not in nm:
+                if kw not in nm:
                     continue
                 for idx in [2, 8]:
                     if idx >= len(tds):
@@ -221,6 +223,20 @@ def fetch_macau_handicap(fid):
     return None
 
 
+
+def fetch_asian_handicap(fid):
+    """抓取当天亚盘：首选澳门('门')，无则保底威廉希尔('威')。返回 (数值, 公司标签)"""
+    for kw, label in [('门', '澳门'), ('威', '威廉希尔')]:
+        v = _fetch_yazhi_company_hc(fid, kw)
+        if v is not None:
+            return v, label
+    return None, ''
+
+
+def fetch_macau_handicap(fid):
+    """兼容旧调用：返回亚盘数值（澳门优先，威廉希尔保底）"""
+    v, _ = fetch_asian_handicap(fid)
+    return v
 def pan_name(val):
     """数值 → 盘口名（与4way一致：半球(-0.5)/受半球(0.5)/平手(0.0)）"""
     if val is None:
@@ -245,12 +261,15 @@ def get_result(m):
 
 
 def get_macau_pan_str(m):
-    """威廉希尔亚盘 初盘→终盘 文本（如 平手→半球 升）"""
+    """亚盘 初盘→终盘 文本（如 平手→半球 升）"""
     oa = m.get('odds_asian')
     if not isinstance(oa, list) or not oa:
         return ''
     item = None
     for x in oa:
+        if '门' in x.get('name', ''):
+            item = x
+            break
         if '威' in x.get('name', ''):
             item = x
             break
@@ -330,15 +349,15 @@ def main():
         league = m.get('league', '?')
         fid = m.get('fid', '')
 
-        hc = fetch_macau_handicap(fid)
+        hc, asian_comp = fetch_asian_handicap(fid)
         if hc is None:
-            lines.append(f'[{num}] {home} vs {away} ({league}) FID={fid} [ERR] 威廉希尔亚盘获取失败')
+            lines.append(f'[{num}] {home} vs {away} ({league}) FID={fid} [ERR] 亚盘获取失败')
             lines.append('')
             continue
 
         cache_path, cache_cnt = find_cache(league)
         if not cache_path or cache_cnt == 0:
-            lines.append(f'[{num}] {home} vs {away} ({league}) 威廉希尔={pan_name(hc)} [ERR] 无缓存({league})')
+            lines.append(f'[{num}] {home} vs {away} ({league}) {asian_comp}={pan_name(hc)} [ERR] 无缓存({league})')
             lines.append('')
             continue
 
@@ -371,7 +390,7 @@ def main():
         home_hits.sort(key=_sort_key)  # 2026-08-21 正序
         away_hits.sort(key=_sort_key)  # 2026-08-21 正序
 
-        lines.append(f'[{num}] {home} vs {away} ({league}) 威廉希尔终盘={pan_name(hc)}')
+        lines.append(f'[{num}] {home} vs {away} ({league}) {asian_comp}终盘={pan_name(hc)}')
         lines.append(f'  缓存: {os.path.basename(cache_path)} ({cache_cnt}场)')
         if home_cn:
             lines.append(f'  主队 {home}->{home_cn} (主场+同盘) {summarize(home_hits)}')

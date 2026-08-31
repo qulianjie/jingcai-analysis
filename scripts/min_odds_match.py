@@ -114,21 +114,21 @@ def fetch_handicap_odds(fid):
     except:
         return None, None, None, None
 
-def fetch_macau_hc(fid):
-    """抓取当天威廉希尔亚盘 HANDICAPLINE"""
+def _fetch_yazhi_company_hc(fid, kw):
+    """抓取 yazhi 页指定公司亚盘，返回 (终盘数值, 初盘名, 终盘名)"""
     import requests
     from bs4 import BeautifulSoup
     h = {'User-Agent': 'Mozilla/5.0', 'Accept-Language': 'zh-CN,zh;q=0.9', 'Referer': 'https://odds.500.com/'}
     r = requests.get(f'https://odds.500.com/fenxi/yazhi-{fid}.shtml', headers=h, timeout=10)
     r.encoding = 'gbk'
-    s = BeautifulSoup(r.text, 'html.parser')
-    for table in s.find_all('table'):
+    soup = BeautifulSoup(r.text, 'html.parser')
+    for table in soup.find_all('table'):
         for tr in table.find_all('tr'):
             tds = tr.find_all('td')
             if len(tds) < 12:
                 continue
             nm = tds[1].get_text().strip()
-            if '威' not in nm:
+            if kw not in nm:
                 continue
             refs = [i for i in range(len(tds)) if tds[i].get('ref') and re.match(r'^-?[\d.]+$', tds[i].get('ref', ''))]
             if len(refs) < 2:
@@ -137,6 +137,21 @@ def fetch_macau_hc(fid):
             ip = tds[refs[1]].get_text().strip().replace('\xa0', '').replace('↑', '').replace('↓', '').strip()
             return match_hc_name(lp), ip, lp
     return None, '', ''
+
+
+def fetch_asian_hc(fid):
+    """抓取当天亚盘：首选澳门('门')，无则保底威廉希尔('威')。返回 (终盘数值, 初盘名, 终盘名, 公司标签)"""
+    for kw, label in [('门', '澳门'), ('威', '威廉希尔')]:
+        v, ip, lp = _fetch_yazhi_company_hc(fid, kw)
+        if v is not None:
+            return v, ip, lp, label
+    return None, '', '', ''
+
+
+def fetch_macau_hc(fid):
+    """兼容旧调用：返回亚盘终盘数值（澳门优先，威廉希尔保底）"""
+    v, _, _, _ = fetch_asian_hc(fid)
+    return v
 
 
 # ── 缓存读取 ──────────────────────────────────────
@@ -273,11 +288,14 @@ def get_hist_odds(m):
 
 
 def get_hist_macau(m):
-    """从缓存中获取历史威廉希尔亚盘终盘值"""
+    """从缓存中获取历史亚盘终盘值（澳门优先，威廉希尔保底）"""
     oa = m.get('odds_asian')
     if not isinstance(oa, list):
         return None
     for item in oa:
+        if '门' in item.get('name', ''):
+            lp = item.get('live_pan', '').replace('↑', '').replace('↓', '').replace(' ', '').strip()
+            return match_hc_name(lp)
         if '威' in item.get('name', ''):
             lp = item.get('live_pan', '').replace('↑', '').replace('↓', '').replace(' ', '').strip()
             return match_hc_name(lp)
@@ -308,11 +326,15 @@ def get_hist_hc(m):
 
 
 def get_hist_asian(m):
-    """从缓存提取威廉希尔亚盘初终盘名"""
+    """从缓存提取亚盘初终盘名（澳门优先，威廉希尔保底）"""
     oa = m.get('odds_asian')
     if not isinstance(oa, list):
         return '-', '-'
     for item in oa:
+        if '门' in item.get('name', ''):
+            ip = item.get('init_pan', '-').replace('↑', '').replace('↓', '').replace(' ', '').strip()
+            lp = item.get('live_pan', '-').replace('↑', '').replace('↓', '').replace(' ', '').strip()
+            return ip, lp
         if '威' in item.get('name', ''):
             ip = item.get('init_pan', '-').replace('↑', '').replace('↓', '').replace(' ', '').strip()
             lp = item.get('live_pan', '-').replace('↑', '').replace('↓', '').replace(' ', '').strip()
@@ -393,7 +415,7 @@ def main():
 
         # 实时抓取当天数据
         (av_init, av_live), (jc_init, jc_live), (iw_init, iw_live) = fetch_today_odds(fid)
-        macau_val, macau_ip, macau_lp = fetch_macau_hc(fid)
+        macau_val, macau_ip, macau_lp, macau_comp = fetch_asian_hc(fid)
         time.sleep(0.3)
 
         if not av_live or macau_val is None:
@@ -431,7 +453,7 @@ def main():
         av_label = full_odds_label(av_init, av_live, av_r, av_min_idx)
         jc_label = full_odds_label(jc_init, jc_live, jc_r, jc_min_idx) if jc_live and jc_init else '缺'
         iw_label = full_odds_label(iw_init, iw_live, iw_r, iw_min_idx) if iw_live and iw_init else '缺'
-        print(f'威廉希尔:{macau_ip}→{macau_lp}({macau_val})')
+        print(f'{macau_comp}:{macau_ip}→{macau_lp}({macau_val})')
         print(f'  百 {av_label}')
         print(f'  竞 {jc_label}')
         print(f'  IW {iw_label}')
