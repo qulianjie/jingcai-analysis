@@ -215,9 +215,8 @@ def main():
         n = 0
         for weekday in sorted(groups.keys()):
             for m in groups[weekday].get('matches', []):
-                mid = None  # 澳客已弃用(2026-09-02)
                 query_match(m.get('matchnum', ''), m.get('home', ''), m.get('away', ''),
-                            m.get('league', ''), m.get('fid', ''), out, mid=mid)
+                            m.get('league', ''), m.get('fid', ''), out)
                 n += 1
                 time.sleep(0.5)
         if n == 0:
