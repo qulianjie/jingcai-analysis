@@ -15,6 +15,7 @@ team_hist_same_pan.py — 当天比赛 主/客场队 同终盘亚盘（澳门优
   - 输出：汇总分布 + 比分串（4way 风格）
 """
 import json
+import time
 import os
 import re
 import sys
@@ -354,7 +355,8 @@ def main():
         league = m.get('league', '?')
         fid = m.get('fid', '')
 
-        mid = okooo_api.get_mid(num)
+        mid = None  # 澳客已弃用(2026-09-02)
+        time.sleep(2)  # 2026-09-02 降速防EdgeOne suspend
         hc, asian_comp = fetch_asian_handicap(fid, mid)
         if hc is None:
             lines.append(f'[{num}] {home} vs {away} ({league}) FID={fid} mid={mid} [ERR] 亚盘获取失败')

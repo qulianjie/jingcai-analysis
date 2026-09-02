@@ -218,7 +218,7 @@ def main():
                 query_match(m.get('matchnum', ''), m.get('home', ''), m.get('away', ''),
                             m.get('league', ''), m.get('fid', ''), out)
                 n += 1
-                time.sleep(0.5)
+                time.sleep(2.0)  # 2026-09-02 降速防EdgeOne suspend
         if n == 0:
             print('⚠️ %s 无任何场次（matches_data.json 为空）' % args.date, file=sys.stderr)
     elif args.fid:

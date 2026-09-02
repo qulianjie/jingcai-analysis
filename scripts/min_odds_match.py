@@ -434,7 +434,7 @@ def main():
         # 实时抓取当天数据
         (av_init, av_live), (jc_init, jc_live), (iw_init, iw_live) = fetch_today_odds(fid, mid)
         macau_val, macau_ip, macau_lp, macau_comp = fetch_asian_hc(fid, mid)
-        time.sleep(0.3)
+        time.sleep(2.0)  # 2026-09-02 降速防EdgeOne suspend
 
         if not av_live or macau_val is None:
             print('⚠️ 缺数据')

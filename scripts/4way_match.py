@@ -11,7 +11,7 @@
     python scripts/4way_match.py [--date YYYY-MM-DD]
 """
 
-import json, os, sys, re, math
+import json, os, sys, re, math, time
 from datetime import datetime, date
 from collections import Counter
 import okooo_api
@@ -960,6 +960,7 @@ def main():
         if len(valid) > 0:
             total_hits += 1
         outs.append(fmt(tm, hist, ci, jc_dir, iw_dir, macau_hc, macau_hc_name, hc_dir, is_fallback=used_fallback, stats=stats if len(valid)==0 else None, asian_comp=asian_comp))
+        time.sleep(2)  # 2026-09-02 降速防EdgeOne suspend
 
     for o in outs:
         print(o)
