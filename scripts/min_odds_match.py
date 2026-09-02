@@ -4,6 +4,8 @@
 赔率最小值匹配——同联赛+同亚盘+百家/竞彩/IW 最小值范围匹配
 """
 import json, os, sys, re, math, time, requests
+import okooo_api
+import _http_common
 from datetime import datetime, date
 from collections import Counter
 
@@ -49,12 +51,15 @@ def x_range(v):
 
 # ── 实时抓取 ──────────────────────────────────────
 
-def fetch_today_odds(fid):
-    """抓取当天百家初赔/终赔、竞彩初赔/终赔、IW初赔/终赔"""
+def fetch_today_odds(fid, mid=None):
+    """抓取当天百家/竞彩/IW初终赔: 澳客优先, 500.com兜底"""
+    if mid:
+        av, jc, iw = okooo_api.fetch_odds(mid)
+        if av or jc or iw:
+            return av, jc, iw
     import requests
     from bs4 import BeautifulSoup
-    h = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-         'Accept-Language': 'zh-CN,zh;q=0.9', 'Referer': 'https://odds.500.com/'}
+    h = _http_common.headers()
     r = requests.get(f'https://odds.500.com/fenxi/ouzhi-{fid}.shtml', headers=h, timeout=10)
     r.encoding = 'gbk'
     s = BeautifulSoup(r.text, 'html.parser')
@@ -79,11 +84,20 @@ def fetch_today_odds(fid):
     return (av_init, av_live), (jc_init, jc_live), (iw_init, iw_live)
 
 
-def fetch_handicap_odds(fid):
-    """从rangqiu页抓取今天竞彩让球赔率（初→终+方向+让球数）"""
+def fetch_handicap_odds(fid, mid=None):
+    """抓取今天竞彩让球赔率（初→终+方向+让球数）: 澳客优先"""
+    if mid:
+        hc = okooo_api.fetch_handicap(mid)
+        if hc and hc.get('init') and hc.get('live'):
+            d = ''
+            for a, b in zip(hc['init'], hc['live']):
+                if b > a + 0.01: d += '⬆'
+                elif b < a - 0.01: d += '⬇'
+                else: d += '➡'
+            return d, hc['init'], hc['live'], hc['rq']
     import requests
     from bs4 import BeautifulSoup
-    h = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    h = _http_common.headers()
     try:
         r = requests.get(f'https://odds.500.com/fenxi/rangqiu-{fid}.shtml', headers=h, timeout=10)
         r.encoding = 'gbk'
@@ -118,7 +132,7 @@ def _fetch_yazhi_company_hc(fid, kw):
     """抓取 yazhi 页指定公司亚盘，返回 (终盘数值, 初盘名, 终盘名)"""
     import requests
     from bs4 import BeautifulSoup
-    h = {'User-Agent': 'Mozilla/5.0', 'Accept-Language': 'zh-CN,zh;q=0.9', 'Referer': 'https://odds.500.com/'}
+    h = _http_common.headers()
     r = requests.get(f'https://odds.500.com/fenxi/yazhi-{fid}.shtml', headers=h, timeout=10)
     r.encoding = 'gbk'
     soup = BeautifulSoup(r.text, 'html.parser')
@@ -139,8 +153,12 @@ def _fetch_yazhi_company_hc(fid, kw):
     return None, '', ''
 
 
-def fetch_asian_hc(fid):
-    """抓取当天亚盘：首选澳门('门')，无则保底威廉希尔('威')。返回 (终盘数值, 初盘名, 终盘名, 公司标签)"""
+def fetch_asian_hc(fid, mid=None):
+    """抓取当天亚盘: 澳客威廉希尔优先, 500.com兜底。返回 (终盘数值, 初盘名, 终盘名, 公司标签)"""
+    if mid:
+        v, ip, lp, comp = okooo_api.fetch_asian_hc(mid)
+        if v is not None:
+            return v, ip, lp, comp
     for kw, label in [('门', '澳门'), ('威', '威廉希尔')]:
         v, ip, lp = _fetch_yazhi_company_hc(fid, kw)
         if v is not None:
@@ -150,7 +168,7 @@ def fetch_asian_hc(fid):
 
 def fetch_macau_hc(fid):
     """兼容旧调用：返回亚盘终盘数值（澳门优先，威廉希尔保底）"""
-    v, _, _, _ = fetch_asian_hc(fid)
+    v, _, _, _ = fetch_asian_hc(fid, mid)
     return v
 
 
@@ -222,8 +240,7 @@ def get_today_matches(td):
             return ml
     # 从500.com实时抓当天（trade.500.com/jczq/）
     from bs4 import BeautifulSoup
-    h = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-         'Accept-Language': 'zh-CN,zh;q=0.9'}
+    h = _http_common.headers()
     try:
         r = requests.get('http://trade.500.com/jczq/', headers=h, timeout=15)
         r.encoding = 'gbk'
@@ -406,6 +423,7 @@ def main():
     total_hits = 0
     for i, tm in enumerate(ms):
         fid = tm.get('fid', '')
+        mid = None  # 澳客已弃用(2026-09-02), 纯500.com
         home = tm.get('home', '?')
         away = tm.get('away', '?')
         league = tm.get('league', '?')
@@ -414,8 +432,8 @@ def main():
         sys.stdout.flush()
 
         # 实时抓取当天数据
-        (av_init, av_live), (jc_init, jc_live), (iw_init, iw_live) = fetch_today_odds(fid)
-        macau_val, macau_ip, macau_lp, macau_comp = fetch_asian_hc(fid)
+        (av_init, av_live), (jc_init, jc_live), (iw_init, iw_live) = fetch_today_odds(fid, mid)
+        macau_val, macau_ip, macau_lp, macau_comp = fetch_asian_hc(fid, mid)
         time.sleep(0.3)
 
         if not av_live or macau_val is None:
@@ -459,7 +477,7 @@ def main():
         print(f'  IW {iw_label}')
 
         # 实时抓让球赔率
-        hc_dir_today, hc_init_today, hc_live_today, hc_num = fetch_handicap_odds(fid)
+        hc_dir_today, hc_init_today, hc_live_today, hc_num = fetch_handicap_odds(fid, mid)
         if hc_dir_today and hc_init_today and hc_live_today:
             def fmt_rq(v): return f'{v[0]:.2f}/{v[1]:.2f}/{v[2]:.2f}'
             print(f'  让({hc_num}):{hc_dir_today}  初:{fmt_rq(hc_init_today)} → 终:{fmt_rq(hc_live_today)}')

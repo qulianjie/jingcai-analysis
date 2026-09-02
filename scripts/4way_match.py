@@ -14,6 +14,8 @@
 import json, os, sys, re, math
 from datetime import datetime, date
 from collections import Counter
+import okooo_api
+import _http_common
 
 SD = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE_DIR = os.path.join(SD, 'data', 'league_cache')
@@ -68,15 +70,21 @@ def dir_6(wi, di, li, wl, dl, ll):
 
 # ── 实时抓取 ──────────────────────────────────────
 
-def fetch_odds_dirs(fid):
-    """从500.com欧赔页抓取 竞彩+IW 盘路方向"""
+def fetch_odds_dirs(fid, mid=None):
+    """抓取竞彩+IW盘路方向: 澳客优先(okooo_api), 500.com兜底"""
+    if mid:
+        av, jc, iw = okooo_api.fetch_odds(mid)
+        if jc and iw:
+            jc_dir = dir_from_3(jc[0], jc[1])
+            iw_dir = dir_from_3(iw[0], iw[1])
+            if jc_dir and iw_dir:
+                return jc_dir, iw_dir
     if not fid:
         return None, None
     import requests
     from bs4 import BeautifulSoup
     url = f'https://odds.500.com/fenxi/ouzhi-{fid}.shtml'
-    h = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-         'Accept-Language': 'zh-CN,zh;q=0.9'}
+    h = _http_common.headers()
     try:
         r = requests.get(url, headers=h, timeout=10)
         r.encoding = 'gbk'
@@ -105,14 +113,21 @@ def fetch_odds_dirs(fid):
         return None, None
 
 
-def fetch_av_w(fid):
-    """从500.com欧赔页抓取百家终赔主胜"""
+def fetch_av_w(fid, mid=None):
+    """抓取百家终赔主胜: 澳客优先, 500.com兜底"""
+    if mid:
+        av, jc, iw = okooo_api.fetch_odds(mid)
+        if av and av[1]:
+            try:
+                return float(av[1][0])
+            except:
+                pass
     if not fid:
         return None
     import requests
     from bs4 import BeautifulSoup
     url = f'https://odds.500.com/fenxi/ouzhi-{fid}.shtml'
-    h = {'User-Agent': 'Mozilla/5.0', 'Accept-Language': 'zh-CN,zh;q=0.9'}
+    h = _http_common.headers()
     try:
         r = requests.get(url, headers=h, timeout=10)
         r.encoding = 'gbk'
@@ -139,8 +154,7 @@ def _fetch_yazhi_company_hc(fid, kw):
     import requests
     from bs4 import BeautifulSoup
     url = f'https://odds.500.com/fenxi/yazhi-{fid}.shtml'
-    h = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-         'Accept-Language': 'zh-CN,zh;q=0.9'}
+    h = _http_common.headers()
     try:
         r = requests.get(url, headers=h, timeout=10)
         r.encoding = 'gbk'
@@ -174,8 +188,12 @@ def _fetch_yazhi_company_hc(fid, kw):
         return None
 
 
-def fetch_asian_handicap(fid):
-    """抓取当天亚盘：首选澳门('门')，无则保底威廉希尔('威')。返回 (数值, 公司标签)"""
+def fetch_asian_handicap(fid, mid=None):
+    """抓取当天亚盘：澳客威廉希尔优先, 500.com澳门/威廉希尔兜底。返回 (数值, 公司标签)"""
+    if mid:
+        v, ip, lp, comp = okooo_api.fetch_asian_hc(mid)
+        if v is not None:
+            return v, comp
     for kw, label in [('门', '澳门'), ('威', '威廉希尔')]:
         v = _fetch_yazhi_company_hc(fid, kw)
         if v is not None:
@@ -275,8 +293,7 @@ def fetch_500_today():
     import requests
     from bs4 import BeautifulSoup
     url = 'http://trade.500.com/jczq/'
-    h = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-         'Accept-Language': 'zh-CN,zh;q=0.9'}
+    h = _http_common.headers()
     try:
         r = requests.get(url, headers=h, timeout=15)
         r.encoding = 'gbk'
@@ -374,14 +391,20 @@ def get_hc_dir(m):
     return None
 
 
-def fetch_handicap_dir(fid):
-    """从500.com让球页抓取今日让球方向（竞彩官方行）"""
+def fetch_handicap_dir(fid, mid=None):
+    """抓取竞彩让球方向: 澳客优先, 500.com兜底"""
+    if mid:
+        hc = okooo_api.fetch_handicap(mid)
+        if hc and hc.get('init') and hc.get('live'):
+            d = dir_from_3(hc['init'], hc['live'])
+            if d:
+                return d
     if not fid:
         return None
     import requests
     from bs4 import BeautifulSoup
     url = f'https://odds.500.com/fenxi/rangqiu-{fid}.shtml'
-    h = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    h = _http_common.headers()
     try:
         r = requests.get(url, headers=h, timeout=10)
         r.encoding = 'gbk'
@@ -438,7 +461,7 @@ def fetch_iw_handicap_dir(fid):
     import requests
     from bs4 import BeautifulSoup
     url = f'https://odds.500.com/fenxi/rangqiu-{fid}.shtml'
-    h = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    h = _http_common.headers()
     try:
         r = requests.get(url, headers=h, timeout=10)
         r.encoding = 'gbk'
@@ -649,6 +672,10 @@ def match_hist(cache, target_hc, jc_dir, iw_dir, iw_hc_dir=None, strict_jc=False
         oa = m.get('odds_asian')
         if isinstance(oa, list):
             for item in oa:
+                if '门' in item.get('name', ''):
+                    as_init = item.get('init_pan', '-')
+                    as_live = item.get('live_pan', '-')
+                    break
                 if '威' in item.get('name', ''):
                     as_init = item.get('init_pan', '-')
                     as_live = item.get('live_pan', '-')
@@ -796,7 +823,8 @@ def main():
         away = tm.get('away_team', '?')
         league = tm.get('league_name', '?')
         fid = tm.get('fid', '')
-        print(f'[{i + 1}/{len(ms)}] {home} vs {away} FID={fid}...', end=' ')
+        mid = None  # 澳客已弃用(2026-09-02 用户指令), 纯500.com
+        print(f'[{i + 1}/{len(ms)}] {home} vs {away} FID={fid} mid={mid}...', end=' ')
         sys.stdout.flush()
 
         # 加载联赛缓存
@@ -853,7 +881,7 @@ def main():
                     break
 
         # 实时抓取亚盘（澳门优先，威廉希尔保底；失败 → 缓存兜底）
-        macau_hc, asian_comp = fetch_asian_handicap(fid)
+        macau_hc, asian_comp = fetch_asian_handicap(fid, mid)
         if macau_hc is not None:
             for name, val in _HANDICAP_ITEMS:
                 if val == macau_hc:
@@ -868,15 +896,15 @@ def main():
                 macau_hc_name = '未获取到'
 
         # 实时抓取盘路（失败 → 缓存兜底）
-        jc_dir, iw_dir = fetch_odds_dirs(fid)
+        jc_dir, iw_dir = fetch_odds_dirs(fid, mid)
         src = '实时'
         if jc_dir is None or iw_dir is None:
             jc_dir = jc_dir or cache_jc_dir
             iw_dir = iw_dir or cache_iw_dir
             if jc_dir is not None or iw_dir is not None:
                 src = '缓存兜底'
-        hc_dir = fetch_handicap_dir(fid) or cache_hc_dir
-        today_av_w = fetch_av_w(fid) or cache_av_w
+        hc_dir = fetch_handicap_dir(fid, mid) or cache_hc_dir
+        today_av_w = fetch_av_w(fid, mid) or cache_av_w
 
         print(f'{src} jc={jc_dir} iw={iw_dir} 让球={hc_dir} {asian_comp}={macau_hc_name}({macau_hc})', end=' ')
         sys.stdout.flush()

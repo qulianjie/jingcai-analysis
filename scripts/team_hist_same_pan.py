@@ -18,6 +18,8 @@ import json
 import os
 import re
 import sys
+import _http_common
+import okooo_api
 import glob
 
 CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'league_cache')
@@ -188,8 +190,7 @@ def _fetch_yazhi_company_hc(fid, kw):
     import requests
     from bs4 import BeautifulSoup
     url = f'https://odds.500.com/fenxi/yazhi-{fid}.shtml'
-    h = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-         'Accept-Language': 'zh-CN,zh;q=0.9'}
+    h = _http_common.headers()
     try:
         r = requests.get(url, headers=h, timeout=10)
         r.encoding = 'gbk'
@@ -224,8 +225,12 @@ def _fetch_yazhi_company_hc(fid, kw):
 
 
 
-def fetch_asian_handicap(fid):
-    """抓取当天亚盘：首选澳门('门')，无则保底威廉希尔('威')。返回 (数值, 公司标签)"""
+def fetch_asian_handicap(fid, mid=None):
+    """抓取当天亚盘：澳客威廉希尔优先, 500.com兜底。返回 (数值, 公司标签)"""
+    if mid:
+        v, ip, lp, comp = okooo_api.fetch_asian_hc(mid)
+        if v is not None:
+            return v, comp
     for kw, label in [('门', '澳门'), ('威', '威廉希尔')]:
         v = _fetch_yazhi_company_hc(fid, kw)
         if v is not None:
@@ -349,9 +354,10 @@ def main():
         league = m.get('league', '?')
         fid = m.get('fid', '')
 
-        hc, asian_comp = fetch_asian_handicap(fid)
+        mid = okooo_api.get_mid(num)
+        hc, asian_comp = fetch_asian_handicap(fid, mid)
         if hc is None:
-            lines.append(f'[{num}] {home} vs {away} ({league}) FID={fid} [ERR] 亚盘获取失败')
+            lines.append(f'[{num}] {home} vs {away} ({league}) FID={fid} mid={mid} [ERR] 亚盘获取失败')
             lines.append('')
             continue
 

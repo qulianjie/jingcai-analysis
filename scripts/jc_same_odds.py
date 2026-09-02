@@ -18,11 +18,13 @@ from bs4 import BeautifulSoup
 SD = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TASKS_DIR = os.path.join(SD, 'tasks')
 
-HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-           'Accept-Language': 'zh-CN,zh;q=0.9', 'Referer': 'https://odds.500.com/'}
-AJAX_H = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+import _http_common
+HEADERS = _http_common.headers()
+AJAX_H = {'User-Agent': _http_common.UA,
           'Accept': 'application/json, text/javascript, */*; q=0.01',
-          'X-Requested-With': 'XMLHttpRequest'}
+          'X-Requested-With': 'XMLHttpRequest',
+          'Referer': 'https://odds.500.com/fenxi/ouzhi_same.php',
+          'Cookie': _http_common.COOKIE}
 
 RESULT = {0: '胜', 1: '平', 2: '负'}
 
@@ -213,8 +215,9 @@ def main():
         n = 0
         for weekday in sorted(groups.keys()):
             for m in groups[weekday].get('matches', []):
+                mid = None  # 澳客已弃用(2026-09-02)
                 query_match(m.get('matchnum', ''), m.get('home', ''), m.get('away', ''),
-                            m.get('league', ''), m.get('fid', ''), out)
+                            m.get('league', ''), m.get('fid', ''), out, mid=mid)
                 n += 1
                 time.sleep(0.5)
         if n == 0:
@@ -223,7 +226,7 @@ def main():
         bench = None
         if args.win is not None and args.draw is not None and args.lost is not None:
             bench = ((args.win, args.draw, args.lost), None)
-        query_match('单场', '', '', args.league, args.fid, out, bench=bench)
+        query_match('单场', '', '', args.league, args.fid, out, bench=bench, mid=args.mid if hasattr(args, 'mid') else None)
     else:
         ap.print_help()
         sys.exit(1)
