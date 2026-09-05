@@ -62,7 +62,7 @@ def _get_cookies(ctx, url):
     漏 session cookie (__tst_status/EO_Bot_Ssid) 导致 requests 缺 L1 被 EdgeOne 拦。"""
     import time as _t
     page = None
-    for pg in getattr(ctx, 'pages', lambda: [])():
+    for pg in (getattr(ctx, 'pages', None) or []):
         page = pg
         break
     for i in range(3):
