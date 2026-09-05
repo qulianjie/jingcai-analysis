@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-竞彩3skill 合并提示：解析 4way / min / samepan 三个工具的输出文件，
-每场合成一个方向信号（多数投票），输出一行提示 + 三个工具各自分布。
+竞彩全skill 合并提示：解析 4way / min / samepan / jc_sameodds / av_sameodds
+五个工具的输出文件，每场合成一个方向信号（多数投票），输出提示 + 各工具分布。
 
 用法:
   python.exe scripts/merge_3skills.py 2026-08-15 [--out C:/path/out.txt]
-默认找同目录 4way_{date}.txt / min_{date}.txt / samepan_{date_无横线}.txt
+默认找 workspace 根 4way_{date}.txt / min_{date}.txt；
+samepan / sameodds(jc) / av_sameodds 在 jingcai_out。
 """
 import re, sys, os
 
@@ -42,13 +43,13 @@ def fmt_dist(dist):
     s += '|客胜%d(%s)' % (dist.get('客胜', 0), pct(dist, '客胜'))
     return '%d场 %s' % (n, s)
 
-# ---------------- 解析三个工具输出 ----------------
+# ---------------- 解析五个工具输出 ----------------
 
 def parse_4way(txt):
-    """编号 -> {'teams','n','dist'}。标题行在文件头集中，块1..N 对应场次1..N"""
+    """编号 -> {'teams','fid','n','dist'}。标题行在文件头集中，块1..N 对应场次1..N"""
     titles = {}
-    for m in re.finditer(r'^\[(\d+)/(\d+)\]\s*(.+?)\s+FID=.*?→\s*(\d+)场', txt, re.M):
-        titles[int(m.group(1))] = {'teams': m.group(3).strip(), 'n': int(m.group(4))}
+    for m in re.finditer(r'^\[(\d+)/(\d+)\]\s*(.+?)\s+FID=(\d+).*?→\s*(\d+)场', txt, re.M):
+        titles[int(m.group(1))] = {'teams': m.group(3).strip(), 'fid': m.group(4), 'n': int(m.group(5))}
     blocks = re.split(r'\r?\n═+\r?\n', txt)
     out = {}
     for i, b in enumerate(blocks):
@@ -61,20 +62,22 @@ def parse_4way(txt):
         if k not in out:
             out[k] = {'dist': {}}
         out[k]['teams'] = v['teams']
+        out[k]['fid'] = v['fid']
         out[k]['n'] = v['n']
     return out
 
 def parse_min(txt):
-    """编号 -> {'teams','dist'}。标题行直接跟详情块"""
+    """编号 -> {'teams','fid','dist'}。标题行直接跟详情块"""
     blocks = re.split(r'(?m)^(?=\[\d+/)', txt)
     out = {}
     for b in blocks:
-        m = re.search(r'^\[(\d+)/(\d+)\]\s*(.+?)\s+FID=', b, re.M)
+        m = re.search(r'^\[(\d+)/(\d+)\]\s*(.+?)\s+FID=(\d+)', b, re.M)
         if not m:
             continue
         idx = int(m.group(1))
         dm = re.search(r'^\s*📊\s*(\d+)场（(.*?)）', b, re.M)
         out[idx] = {'teams': m.group(3).strip(),
+                    'fid': m.group(4),
                     'dist': parse_dist(dm.group(2)) if dm else {}}
     return out
 
@@ -97,33 +100,82 @@ def parse_samepan(txt):
         out[no] = e
     return out
 
-# ---------------- 场次对齐（按队名） ----------------
+def parse_sameodds(txt):
+    """jc_sameodds / av_sameodds 输出: '【周六001】队 vs 队（联赛）FID=xxx' + 相同联赛统计分布
+    -> {'周六001': {'teams','fid','dist'}}  dist 为 {'主胜','平','客胜'} 计数
+    只取「一、相同联赛」统计；该区无命中(0场)则 dist 为空。
+    """
+    blocks = re.split(r'(?m)^(?=【周[一二三四五六日]\d+】)', txt)
+    out = {}
+    for b in blocks:
+        m = re.search(r'^【(周[一二三四五六日]\d+)】\s*(.+?)\s*FID=(\d+)', b, re.M)
+        if not m:
+            continue
+        no = m.group(1)
+        # 相同联赛统计行: 📊 相同联赛统计（日职）：胜1 平0 负0（共1场），胜率100.0%
+        dm = re.search(r'📊\s*相同联赛统计（[^）]*）：胜(\d+)\s+平(\d+)\s+负(\d+)（共(\d+)场）', b)
+        dist = {}
+        if dm and int(dm.group(4)) > 0:
+            dist = {'主胜': int(dm.group(1)), '平': int(dm.group(2)), '客胜': int(dm.group(3))}
+        out[no] = {'teams': m.group(2).strip(), 'fid': m.group(3), 'dist': dist}
+    return out
+
+# ---------------- 场次对齐 ----------------
 
 def team_key(s):
     return re.sub(r'\s+', '', s)
 
-def align(fw, mn, sp):
-    """4way/min 数字编号 -> samepan 周Xnnn 编号，按主队名匹配"""
+def align(fw, mn, sp, jc, av):
+    """4way/min 数字编号 -> samepan/jc/av 周Xnnn 编号。
+    samepan 按主队名匹配；jc/av 优先按 FID 精确匹配，失败退回主队名。"""
     sp_by_team = {team_key(v['teams']): k for k, v in sp.items()}
+    # jc/av 的 teams 形如 '福冈黄蜂 vs 水户蜀葵（日职）'，去（联赛）后缀后与 4way/min 同名
+    def _clean(t):
+        return re.sub(r'[（(].*?[）)]$', '', t).strip()
+    jc_by_fid = {v['fid']: k for k, v in jc.items() if v.get('fid')}
+    av_by_fid = {v['fid']: k for k, v in av.items() if v.get('fid')}
+    jc_by_team = {team_key(_clean(v['teams'])): k for k, v in jc.items()}
+    av_by_team = {team_key(_clean(v['teams'])): k for k, v in av.items()}
     merged = []
     for idx in sorted(fw.keys()):
         f = fw.get(idx, {})
         m = mn.get(idx, {})
         tk = team_key(f.get('teams', m.get('teams', '')))
+        fid = f.get('fid') or m.get('fid')
         sp_no = None
         if tk in sp_by_team:
             sp_no = sp_by_team[tk]
         else:
-            # 模糊：主队名子串匹配
             for stk, sno in sp_by_team.items():
                 if tk and (tk in stk or stk in tk):
                     sp_no = sno
+                    break
+        # jc/av 对齐：FID 优先
+        jc_no = jc_by_fid.get(fid) if fid else None
+        if not jc_no and tk in jc_by_team:
+            jc_no = jc_by_team[tk]
+        if not jc_no:
+            for stk, sno in jc_by_team.items():
+                if tk and (tk in stk or stk in tk):
+                    jc_no = sno
+                    break
+        av_no = av_by_fid.get(fid) if fid else None
+        if not av_no and tk in av_by_team:
+            av_no = av_by_team[tk]
+        if not av_no:
+            for stk, sno in av_by_team.items():
+                if tk and (tk in stk or stk in tk):
+                    av_no = sno
                     break
         merged.append({
             'idx': idx, 'teams': f.get('teams') or m.get('teams', ''),
             'fw': f, 'mn': m,
             'sp': sp.get(sp_no, {}) if sp_no else {},
             'sp_no': sp_no,
+            'jc': jc.get(jc_no, {}) if jc_no else {},
+            'jc_no': jc_no,
+            'av': av.get(av_no, {}) if av_no else {},
+            'av_no': av_no,
         })
     return merged
 
@@ -134,6 +186,12 @@ def merge_signal(row):
     detail = []
     for name, dist in (('min', row['mn'].get('dist', {})),
                         ('4way', row['fw'].get('dist', {}))):
+        d = direction(dist)
+        detail.append((name, d, dist))
+        if d:
+            votes.append(d)
+    for name, dist in (('jc', row['jc'].get('dist', {})),
+                       ('av', row['av'].get('dist', {}))):
         d = direction(dist)
         detail.append((name, d, dist))
         if d:
@@ -174,13 +232,17 @@ def main():
     base = os.path.dirname(os.path.abspath(__file__))
     fw_path = os.path.join(base, '..', '4way_%s.txt' % date)
     mn_path = os.path.join(base, '..', 'min_%s.txt' % date)
-    # samepan 命名可能带/不带横线，位置可能在 workspace 根或 jingcai_out
+    # samepan/jc/av 输出在 jingcai_out
+    out_dir = 'C:/Users/lianjie/jingcai_out'
     sp_candidates = [
         os.path.join(base, '..', 'samepan_%s.txt' % d),
         os.path.join(base, '..', 'samepan_%s.txt' % date),
-        os.path.join('C:/Users/lianjie/jingcai_out', 'samepan_%s.txt' % date),
+        os.path.join(out_dir, 'samepan_%s.txt' % date),
+        os.path.join(out_dir, 'samepan_%s.txt' % d),
     ]
     sp_path = next((p for p in sp_candidates if os.path.exists(p)), sp_candidates[0])
+    jc_path = os.path.join(out_dir, 'sameodds_%s.txt' % date)
+    av_path = os.path.join(out_dir, 'av_sameodds_%s.txt' % date)
     if not os.path.exists(fw_path):
         # 允许传自定义路径
         fw_path = sys.argv[2] if len(sys.argv) > 2 else fw_path
@@ -188,11 +250,14 @@ def main():
     fw = parse_4way(load(fw_path))
     mn = parse_min(load(mn_path))
     sp = parse_samepan(load(sp_path))
-    print('4way %d场, min %d场, samepan %d场' % (len(fw), len(mn), len(sp)), file=sys.stderr)
+    jc = parse_sameodds(load(jc_path)) if os.path.exists(jc_path) else {}
+    av = parse_sameodds(load(av_path)) if os.path.exists(av_path) else {}
+    print('4way %d场, min %d场, samepan %d场, jc %d场, av %d场' % (len(fw), len(mn), len(sp), len(jc), len(av)), file=sys.stderr)
 
-    rows = align(fw, mn, sp)
+    rows = align(fw, mn, sp, jc, av)
     out = []
-    out.append('⚽ 竞彩3skill 合成信号 %s' % date)
+    out.append('⚽ 竞彩全skill 合成信号 %s' % date)
+    out.append('  工具: min 4way jc av samepan(主/客队线)')
     out.append('')
     for r in rows:
         best, flag, votes, detail = merge_signal(r)
