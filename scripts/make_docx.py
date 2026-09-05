@@ -8,11 +8,11 @@ from docx.shared import Pt, RGBColor, Cm
 from docx.enum.text import WD_LINE_SPACING
 
 OUT_DIR = r"C:\Users\lianjie\jingcai_out"
-TOOL_ORDER = ["merge", "4way", "min", "sameodds", "samepan"]
+TOOL_ORDER = ["merge", "4way", "min", "sameodds", "av_sameodds", "samepan"]
 TOOL_COLORS = {"merge": "E67E22", "4way": "2980B9", "min": "27AE60",
-               "sameodds": "8E44AD", "samepan": "C0392B"}
+               "sameodds": "8E44AD", "av_sameodds": "16A085", "samepan": "C0392B"}
 TOOL_CN = {"merge": "合成信号", "4way": "四维匹配", "min": "最小值匹配",
-           "sameodds": "同赔初盘", "samepan": "同盘统计"}
+           "sameodds": "同赔初盘", "av_sameodds": "百家同赔", "samepan": "同盘统计"}
 
 def read_txt(path):
     with open(path, encoding="utf-8") as f:
@@ -45,7 +45,7 @@ def split_sections(text, tool):
             is_title = bool(re.match(r"^\[\d+/\d+\] ", ln))
         elif tool == "merge":
             is_title = bool(re.match(r"^\[\d{2}\] ", ln))
-        elif tool == "sameodds":
+        elif tool in ("sameodds", "av_sameodds"):
             is_title = bool(re.match(r"^【.*\d{3}】", ln))
         elif tool == "samepan":
             is_title = bool(re.match(r"^\[(?:周[一二三四五六日天])?\d{3}\] ", ln))
@@ -81,6 +81,31 @@ def transform_sameodds(body):
             out.append(ln)
     return "\n".join(out)
 
+
+
+def transform_av_sameodds(body):
+    """av_sameodds 表格(日期/对阵/比分/赛果/历史百家初/终/盘路) -> 紧凑行"""
+    out = []
+    for ln in body.split("\n"):
+        s = ln.strip()
+        if s.startswith("|") and s.endswith("|"):
+            cells = [c.strip() for c in s.strip().strip("|").split("|")]
+            if not cells:
+                out.append(ln); continue
+            if cells[0] in ("日期",) or (cells[0] and set(cells[0]) <= set("-: ")):
+                continue
+            if len(cells) >= 6:
+                date_, vs_, score_, result_, p0 = cells[:5]
+                p1 = cells[5] if len(cells) > 5 else ""
+                trend = cells[6] if len(cells) > 6 else ""
+                out.append(f"{date_} {vs_} {score_} {result_}")
+                out.append(f"   初:{p0}  ->  终:{p1} {trend}".rstrip())
+            else:
+                out.append(ln)
+        else:
+            out.append(ln)
+    return "\n".join(out)
+
 def parse_date(datestr):
     if re.match(r"^\d{4}-\d{2}-\d{2}$", datestr): return datestr
     if re.match(r"^\d{2}-\d{2}$", datestr): return "2026-" + datestr
@@ -95,6 +120,8 @@ def clean_body(tool, body):
     body = "\n".join(ls).strip("\n")
     if tool == "sameodds":
         body = transform_sameodds(body)
+    if tool == "av_sameodds":
+        body = transform_av_sameodds(body)
     return body
 
 def main():
@@ -161,7 +188,7 @@ def main():
         return p
 
     add_title(f"⚽ {date_s} 竞彩4skill 按场次", 17, "1C2B4A")
-    add_body("顺序: merge合成 → 4way四维 → min最小 → sameodds同赔 → samepan同盘", 9, "888888")
+    add_body("顺序: merge合成 → 4way四维 → min最小 → sameodds同赔 → av百家同赔 → samepan同盘", 9, "888888")
 
     for i, key in enumerate(order_keys, 1):
         add_title(f"{i}. {key}", 13, "FFFFFF", space_before=10, space_after=0)
