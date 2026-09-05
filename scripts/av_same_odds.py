@@ -61,8 +61,11 @@ def get_hist_av_live(m):
 
 
 def r1(v):
-    """round 到 1 位小数(用户口径: 小数点后一位一致)"""
-    return round(float(v), 1)
+    """截断到 1 位小数(用户口径 2026-09-05 确认: "小数点后一位一致"=只比十分位,
+    百分位不进位 —— 不是四舍五入/不是银行家舍入!)
+    例: 1.95→1.9, 3.45→3.4, 2.03→2.0。3.54 vs 3.45 → 3.5 vs 3.4 不匹配"""
+    from decimal import Decimal, ROUND_DOWN
+    return float(Decimal(str(v)).quantize(Decimal('0.1'), rounding=ROUND_DOWN))
 
 
 def same1(a, b):
