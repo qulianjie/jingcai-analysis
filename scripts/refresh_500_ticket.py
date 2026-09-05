@@ -57,10 +57,29 @@ def _unique_profile():
 
 
 def _get_cookies(ctx, url):
-    """取 cookie, 带重试"""
+    """取 cookie, 带重试。优先 CDP Network.getAllCookies (含 session cookie L1),
+    兜底 ctx.cookies(url)。2026-09-05 修复: ctx.cookies(url) 只返回持久 cookie,
+    漏 session cookie (__tst_status/EO_Bot_Ssid) 导致 requests 缺 L1 被 EdgeOne 拦。"""
     import time as _t
+    page = None
+    for pg in getattr(ctx, 'pages', lambda: [])():
+        page = pg
+        break
     for i in range(3):
         try:
+            if page is not None:
+                cdp = ctx.new_cdp_session(page)
+                res = cdp.send("Network.getAllCookies")
+                cookies = res.get("cookies", [])
+                if cookies:
+                    out = []
+                    for c in cookies:
+                        out.append({
+                            "name": c["name"], "value": c["value"],
+                            "domain": c.get("domain", ""), "path": c.get("path", "/"),
+                            "secure": c.get("secure", False), "httpOnly": c.get("httpOnly", False),
+                        })
+                    return out
             return ctx.cookies(url)
         except Exception as e:
             log(f"  cookies retry {i+1}: {str(e)[:80]}")

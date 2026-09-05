@@ -6,9 +6,9 @@
 用户口径(2026-09-05 定义): "相同联赛百家欧赔胜平负都一样，
 一样的意思就是保证小数点后一位一致 不要自己定义"。
 → 匹配精度 = round(x, 1) 一位小数一致(严格全等，不做 ±0.09 范围扩展)。
-→ 基准 = 当天百家欧赔初盘(av_init, 与 jc_same_odds 用竞彩初盘对齐)，
-   历史 = 缓存内同联赛场次的百家欧赔初盘(av.iw/id/il)。
-   输出每场历史比分 + 胜平负分布统计。
+→ 基准 = 当天百家欧赔**终盘**(av_live, 用户 2026-09-05 纠正 "av是终盘的百家")，
+   历史 = 缓存内同联赛场次的百家欧赔终盘(av.lw/ld/ll)。
+   初盘仅展示参考。输出每场历史比分 + 胜平负分布统计。
 
 用法:
   python av_same_odds.py --date 2026-09-05            # 跑当天全部场次
@@ -114,12 +114,12 @@ def query_match(matchnum, home, away, league, fid, out):
         p('⚠️ 无法获取百家欧赔（ouzhi 页解析失败）')
         p()
         return
-    bench_init = av_init or av_live
     bench_live = av_live or av_init
-    p('百家初盘：%.2f / %.2f / %.2f' % tuple(bench_init))
+    bench_init = av_init or av_live
     p('百家终盘：%.2f / %.2f / %.2f' % tuple(bench_live))
+    p('百家初盘：%.2f / %.2f / %.2f' % tuple(bench_init))
     p('当前联赛：%s' % league)
-    p('匹配口径：百家欧赔三值 小数点后一位一致（round 1 位全等，同联赛）')
+    p('匹配口径：百家欧赔**终盘**三值 小数点后一位一致（round 1 位全等，同联赛）')
     p()
 
     # 找同联赛缓存
@@ -134,16 +134,16 @@ def query_match(matchnum, home, away, league, fid, out):
     p('缓存: %s (%d场)' % (os.path.basename(fp), len(ml)))
     p()
 
-    # 匹配历史: 初盘 round1 全等
+    # 匹配历史: 终盘 round1 全等 (用户纠正 av=终盘百家)
     hits = []
     for m in ml:
-        hi = get_hist_av_init(m)
-        if same1(bench_init, hi):
-            hl = get_hist_av_live(m)
+        hl = get_hist_av_live(m)
+        if same1(bench_live, hl):
+            hi = get_hist_av_init(m)
             hits.append((m, hi, hl))
 
     if not hits:
-        p('【一、相同联赛】0场 — 无百家欧赔初盘一位小数全等的历史比赛')
+        p('【一、相同联赛】0场 — 无百家欧赔终盘一位小数全等的历史比赛')
         p()
         return
 
