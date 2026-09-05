@@ -126,8 +126,12 @@ def clean_body(tool, body):
 
 def main():
     if len(sys.argv) < 2:
-        print("usage: make_docx.py 2026-09-03"); return
+        print("usage: make_docx.py 2026-09-03 [006-016]"); return
     date_s = parse_date(sys.argv[1])
+    rng = None
+    if len(sys.argv) > 2 and re.match(r'^\d{3}-\d{3}$', sys.argv[2]):
+        a, b = sys.argv[2].split('-')
+        rng = (int(a), int(b))
 
     tool_data = {}
     order_keys = []
@@ -154,6 +158,11 @@ def main():
         print(f"[load] {tool}: {len(d)}")
     if not order_keys:
         order_keys = list(tool_data.get("merge", {}))
+    if rng:
+        lo, hi = rng
+        # order_keys 顺序 = 场次 1..N（min/4way split 标题顺序）
+        order_keys = [k for i, k in enumerate(order_keys, 1) if lo <= i <= hi]
+        print(f"[range] 保留场次 {lo}-{hi}: {len(order_keys)} 场", file=sys.stderr)
 
     doc = Document()
     # 页面边距调小
@@ -210,6 +219,8 @@ def main():
             for ln in body.split("\n"):
                 add_body(ln if ln else " ", 9.5, "222222")
     out_docx = os.path.join(OUT_DIR, f"mobile_{date_s}.docx")
+    if rng:
+        out_docx = os.path.join(OUT_DIR, f"mobile_{date_s}_{rng[0]:03d}-{rng[1]:03d}.docx")
     doc.save(out_docx)
     print(f"[docx] {out_docx} {os.path.getsize(out_docx)} bytes, {len(order_keys)} matches")
 
