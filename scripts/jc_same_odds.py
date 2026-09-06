@@ -50,10 +50,23 @@ def match_level(bench_dir, hist_dir):
     return '低'
 
 
+# 联赛别名互认表（与 4way/min 的 ALIAS 一致；防"日职"子串误匹配"日职乙"等子级联赛）
+SAME_LEAGUE_ALIAS = {
+    '韩职': 'K1联赛', 'K1联赛': '韩职',
+    '美职足': '美职联', '美职联': '美职足',
+    '英联赛杯': '英联杯', '英联杯': '英联赛杯',
+}
+
+
 def same_league(hist_league, cur_league):
     if not hist_league or not cur_league:
         return False
-    return hist_league == cur_league or hist_league in cur_league or cur_league in hist_league
+    if hist_league == cur_league:
+        return True
+    # 仅显式别名互认；不做任意子串互含（"日职" in "日职乙" 会把 J2 混进 J1）
+    if SAME_LEAGUE_ALIAS.get(hist_league) == cur_league or SAME_LEAGUE_ALIAS.get(cur_league) == hist_league:
+        return True
+    return False
 
 
 def fetch_jc_odds(fid):
