@@ -33,12 +33,19 @@ def mtime(path):
 
 def main():
     date = sys.argv[1] if len(sys.argv) > 1 else '2026-09-05'
-    print(f'===== 4skill 一致性检查 {date} =====')
+    # --range 支持：校验 range 版输出 *_NNN-NNN.txt
+    rng = ''
+    if '--range' in sys.argv:
+        ri = sys.argv.index('--range')
+        if ri + 1 < len(sys.argv):
+            rng = sys.argv[ri + 1]
+    suf = ('_' + rng) if rng else ''
+    print(f'===== 4skill 一致性检查 {date}{suf} =====')
     print()
     print('--- 1. 文件同源 (merge读workspace根 / docx明细读jingcai_out) ---')
-    for tag, fname in (('4way', f'4way_{date}.txt'), ('min ', f'min_{date}.txt')):
-        a, b = md5(f'{WS}\\{fname}'), md5(f'{OUT}\\{fname}')
-        ta, tb = mtime(f'{WS}\\{fname}'), mtime(f'{OUT}\\{fname}')
+    for tag, fname in (('4way', f'4way_{date}{suf}.txt'), ('min ', f'min_{date}{suf}.txt')):
+        a, b = md5(f'{WS}\\{fname}'), md5(f'{OUT}\\\\{fname}')
+        ta, tb = mtime(f'{WS}\\{fname}'), mtime(f'{OUT}\\\\{fname}')
         if a is None or b is None:
             print(f'🚨 {tag}: 文件缺失 (ws={a is not None} out={b is not None})')
         elif a == b:
@@ -49,11 +56,11 @@ def main():
     print('--- 2. 数据时点 (除 jc 同赔=官方初盘固定外, 其余需时效核对) ---')
     now = datetime.datetime.now()
     tools = [
-        ('4way(实时亚盘+欧赔)', f'{OUT}\\4way_{date}.txt', True),
-        ('min(实时欧赔)',       f'{OUT}\\min_{date}.txt', True),
-        ('samepan(实时亚盘匹配)', f'{OUT}\\samepan_{date}.txt', True),
-        ('jc 同赔(官方初盘)',   f'{OUT}\\sameodds_{date}.txt', False),
-        ('av 同赔(实时终盘)',   f'{OUT}\\av_sameodds_{date}.txt', True),
+        ('4way(实时亚盘+欧赔)', os.path.join(OUT, '4way_%s%s.txt' % (date, suf)), True),
+        ('min(实时欧赔)',       os.path.join(OUT, 'min_%s%s.txt' % (date, suf)), True),
+        ('samepan(实时亚盘匹配)', os.path.join(OUT, 'samepan_%s%s.txt' % (date, suf)), True),
+        ('jc 同赔(官方初盘)',   os.path.join(OUT, 'sameodds_%s%s.txt' % (date, suf)), False),
+        ('av 同赔(实时终盘)',   os.path.join(OUT, 'av_sameodds_%s%s.txt' % (date, suf)), True),
     ]
     for tag, path, need_chk in tools:
         t = mtime(path)
@@ -71,8 +78,8 @@ def main():
     print()
     print('--- 3. merge 4way 场数 vs 明细标题 → N场 (抽查) ---')
     try:
-        mtxt = open(f'{OUT}\\merge_{date}.txt', encoding='utf-8').read()
-        ftxt = open(f'{OUT}\\4way_{date}.txt', encoding='utf-8').read()
+        mtxt = open(os.path.join(OUT, 'merge_%s%s.txt' % (date, suf)), encoding='utf-8').read()
+        ftxt = open(os.path.join(OUT, '4way_%s%s.txt' % (date, suf)), encoding='utf-8').read()
     except OSError as e:
         print('  读取失败:', e); return 1
     fw_title = {}

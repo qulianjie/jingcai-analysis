@@ -129,17 +129,26 @@ def main():
         print("usage: make_docx.py 2026-09-03 [006-016]"); return
     date_s = parse_date(sys.argv[1])
     rng = None
+    rng_s = ''
     if len(sys.argv) > 2 and re.match(r'^\d{3}-\d{3}$', sys.argv[2]):
         a, b = sys.argv[2].split('-')
         rng = (int(a), int(b))
+        rng_s = sys.argv[2]
 
     tool_data = {}
     order_keys = []
     for tool in TOOL_ORDER:
-        txt_path = os.path.join(OUT_DIR, f"{tool}_{date_s}.txt")
+        # range 版优先（5工具只跑部分场次时输出 *_NNN-NNN.txt）
+        txt_path = None
+        if rng_s:
+            p2 = os.path.join(OUT_DIR, f"{tool}_{date_s}_{rng_s}.txt")
+            if os.path.exists(p2):
+                txt_path = p2
+        if txt_path is None:
+            txt_path = os.path.join(OUT_DIR, f"{tool}_{date_s}.txt")
         # samepan 优先读补了欧赔的增强版 (enrich_samepan_odds.py 生成)
         if tool == "samepan":
-            enhanced = os.path.join(OUT_DIR, f"samepan_odds_{date_s}.txt")
+            enhanced = os.path.join(OUT_DIR, f"samepan_odds_{date_s}{('_' + rng_s) if rng_s else ''}.txt")
             if os.path.exists(enhanced):
                 txt_path = enhanced
         if not os.path.exists(txt_path):
