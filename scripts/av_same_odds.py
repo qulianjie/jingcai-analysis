@@ -180,6 +180,7 @@ def main():
     ap.add_argument('--fid', help='单场 FID')
     ap.add_argument('--league', default='', help='单场联赛名')
     ap.add_argument('--out', help='输出文件路径（默认 stdout）')
+    ap.add_argument('--range', default='', help='只跑场次范围如 001-005，默认全部')
     args = ap.parse_args()
 
     out = open(args.out, 'w', encoding='utf-8') if args.out else sys.stdout
@@ -191,13 +192,28 @@ def main():
             sys.exit(1)
         md = json.load(open(md_path, encoding='utf-8'))
         groups = md.get('groups', {})
-        n = 0
+        # 扁平化所有场次（序号=输出顺序=单售卖日竞彩场次尾号），再按 --range 过滤
+        allm = []
         for weekday in sorted(groups.keys()):
             for m in groups[weekday].get('matches', []):
-                query_match(m.get('matchnum', ''), m.get('home', ''), m.get('away', ''),
-                            m.get('league', ''), m.get('fid', ''), out)
-                n += 1
-                time.sleep(2.0)
+                allm.append(m)
+        lo = hi = None
+        if args.range:
+            rm = re.match(r'^\s*(\d+)\s*-\s*(\d+)\s*$', args.range)
+            if not rm:
+                print('⚠️ --range 格式应为 001-005', file=sys.stderr)
+                sys.exit(2)
+            lo, hi = int(rm.group(1)), int(rm.group(2))
+        sel = [(i, m) for i, m in enumerate(allm, 1) if lo is None or lo <= i <= hi]
+        if not sel:
+            print('⚠️ 范围内无场次', file=sys.stderr)
+            sys.exit(1)
+        n = 0
+        for _i, m in sel:
+            query_match(m.get('matchnum', ''), m.get('home', ''), m.get('away', ''),
+                        m.get('league', ''), m.get('fid', ''), out)
+            n += 1
+            time.sleep(2.0)
         if n == 0:
             print('⚠️ %s 无任何场次（matches_data.json 为空）' % args.date, file=sys.stderr)
     elif args.fid:

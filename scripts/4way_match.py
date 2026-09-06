@@ -805,26 +805,39 @@ def main():
     from argparse import ArgumentParser
     p = ArgumentParser(description='竞彩4条件历史匹配')
     p.add_argument('--date', type=str)
+    p.add_argument('--range', type=str, default='', help='只跑场次范围如 001-005，默认全部')
     a = p.parse_args()
     td = datetime.strptime(a.date, '%Y-%m-%d').date() if a.date else date.today()
     ds = td.strftime('%Y-%m-%d')
     print(f'📅 {ds}\n')
 
-    ms = get_today_matches(td)
-    if not ms:
+    ms_all = get_today_matches(td)
+    if not ms_all:
         print('⚠️ 无比赛')
         sys.exit(1)
-    print(f'📋 {len(ms)} 场\n')
+    # --range 过滤（序号=输出顺序=单售卖日竞彩场次尾号；保留原始序号标题）
+    lo = hi = None
+    if a.range:
+        rm = re.match(r'^\s*(\d+)\s*-\s*(\d+)\s*$', a.range)
+        if not rm:
+            print('⚠️ --range 格式应为 001-005')
+            sys.exit(2)
+        lo, hi = int(rm.group(1)), int(rm.group(2))
+    sel = [(i, tm) for i, tm in enumerate(ms_all, 1) if lo is None or lo <= i <= hi]
+    if not sel:
+        print('⚠️ 范围内无场次')
+        sys.exit(1)
+    print(f'📋 {len(ms_all)} 场' + (f'（范围 {a.range} → 跑 {len(sel)} 场）' if a.range else '') + '\n')
 
     outs = []
     total_hits = 0
-    for i, tm in enumerate(ms):
+    for i, tm in sel:
         home = tm.get('home_team', '?')
         away = tm.get('away_team', '?')
         league = tm.get('league_name', '?')
         fid = tm.get('fid', '')
         mid = None  # 澳客已弃用(2026-09-02 用户指令), 纯500.com
-        print(f'[{i + 1}/{len(ms)}] {home} vs {away} FID={fid} mid={mid}...', end=' ')
+        print(f'[{i}/{len(ms_all)}] {home} vs {away} FID={fid} mid={mid}...', end=' ')
         sys.stdout.flush()
 
         # 加载联赛缓存
@@ -966,7 +979,7 @@ def main():
         print(o)
     print('=' * 60)
     print('📊 汇总')
-    print(f'{total_hits}/{len(ms)} 场找到历史匹配（缺竞彩时仅用亚盘+IW）')
+    print(f'{total_hits}/{len(sel)} 场找到历史匹配（缺竞彩时仅用亚盘+IW）')
 
 
 if __name__ == '__main__':

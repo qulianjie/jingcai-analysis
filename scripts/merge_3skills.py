@@ -46,18 +46,21 @@ def fmt_dist(dist):
 # ---------------- 解析五个工具输出 ----------------
 
 def parse_4way(txt):
-    """编号 -> {'teams','fid','n','dist'}。标题行在文件头集中，块1..N 对应场次1..N"""
+    """编号 -> {'teams','fid','n','dist'}。标题行在文件头集中，块1..N 对应场次1..N。
+    支持子集输出（如只跑 006-016）：块按标题出现顺序与标题序号 zip 映射。"""
+    title_matches = list(re.finditer(r'^\[(\d+)/(\d+)\]\s*(.+?)\s+FID=(\d+).*?→\s*(\d+)场', txt, re.M))
+    idxs = [int(m.group(1)) for m in title_matches]
     titles = {}
-    for m in re.finditer(r'^\[(\d+)/(\d+)\]\s*(.+?)\s+FID=(\d+).*?→\s*(\d+)场', txt, re.M):
+    for m in title_matches:
         titles[int(m.group(1))] = {'teams': m.group(3).strip(), 'fid': m.group(4), 'n': int(m.group(5))}
     blocks = re.split(r'\r?\n═+\r?\n', txt)
     out = {}
-    for i, b in enumerate(blocks):
-        if i == 0:
-            continue
+    for bi, idx in enumerate(idxs, 1):  # 第 bi 个块 ↔ 标题列表第 bi 个序号
+        if bi >= len(blocks):
+            break
+        b = blocks[bi]
         dm = re.search(r'^\s*📊\s*(\d+)场(.*)$', b, re.M)
-        if dm:
-            out[i] = {'dist': parse_dist(dm.group(2))}
+        out[idx] = {'dist': parse_dist(dm.group(2)) if dm else {}}
     for k, v in titles.items():
         if k not in out:
             out[k] = {'dist': {}}
@@ -229,20 +232,43 @@ def merge_signal(row):
 def main():
     date = sys.argv[1] if len(sys.argv) > 1 else '2026-08-15'
     d = date.replace('-', '')
+    # --range 支持（任意位置；优先读 range 版输出文件 *_NNN-NNN.txt）
+    rng = ''
+    if '--range' in sys.argv:
+        ri = sys.argv.index('--range')
+        if ri + 1 < len(sys.argv):
+            rng = sys.argv[ri + 1]
+    suf = ('_' + rng) if rng else ''
     base = os.path.dirname(os.path.abspath(__file__))
-    fw_path = os.path.join(base, '..', '4way_%s.txt' % date)
-    mn_path = os.path.join(base, '..', 'min_%s.txt' % date)
-    # samepan/jc/av 输出在 jingcai_out
     out_dir = 'C:/Users/lianjie/jingcai_out'
+
+    def _first(paths):
+        return next((p for p in paths if os.path.exists(p)), paths[0])
+
+    fw_path = _first([
+        os.path.join(base, '..', '4way_%s%s.txt' % (date, suf)),
+        os.path.join(base, '..', '4way_%s.txt' % date),
+    ])
+    mn_path = _first([
+        os.path.join(base, '..', 'min_%s%s.txt' % (date, suf)),
+        os.path.join(base, '..', 'min_%s.txt' % date),
+    ])
     sp_candidates = [
+        os.path.join(out_dir, 'samepan_%s%s.txt' % (date, suf)),
         os.path.join(base, '..', 'samepan_%s.txt' % d),
         os.path.join(base, '..', 'samepan_%s.txt' % date),
         os.path.join(out_dir, 'samepan_%s.txt' % date),
         os.path.join(out_dir, 'samepan_%s.txt' % d),
     ]
-    sp_path = next((p for p in sp_candidates if os.path.exists(p)), sp_candidates[0])
-    jc_path = os.path.join(out_dir, 'sameodds_%s.txt' % date)
-    av_path = os.path.join(out_dir, 'av_sameodds_%s.txt' % date)
+    sp_path = _first(sp_candidates)
+    jc_path = _first([
+        os.path.join(out_dir, 'sameodds_%s%s.txt' % (date, suf)),
+        os.path.join(out_dir, 'sameodds_%s.txt' % date),
+    ])
+    av_path = _first([
+        os.path.join(out_dir, 'av_sameodds_%s%s.txt' % (date, suf)),
+        os.path.join(out_dir, 'av_sameodds_%s.txt' % date),
+    ])
     if not os.path.exists(fw_path):
         # 允许传自定义路径
         fw_path = sys.argv[2] if len(sys.argv) > 2 else fw_path
@@ -255,6 +281,11 @@ def main():
     print('4way %d场, min %d场, samepan %d场, jc %d场, av %d场' % (len(fw), len(mn), len(sp), len(jc), len(av)), file=sys.stderr)
 
     rows = align(fw, mn, sp, jc, av)
+    if rng:
+        rm = re.match(r'^\s*(\d+)\s*-\s*(\d+)\s*$', rng)
+        if rm:
+            lo, hi = int(rm.group(1)), int(rm.group(2))
+            rows = [r for r in rows if lo <= r['idx'] <= hi]
     out = []
     out.append('⚽ 竞彩全skill 合成信号 %s' % date)
     out.append('  工具: min 4way jc av samepan(主/客队线)')

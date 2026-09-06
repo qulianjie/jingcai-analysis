@@ -322,12 +322,15 @@ def summarize(hits):
 def main():
     date = None
     out_path = None
+    range_str = ''
     args = sys.argv[1:]
     for i, a in enumerate(args):
         if a == '--date' and i + 1 < len(args):
             date = args[i + 1]
         elif a == '--out' and i + 1 < len(args):
             out_path = args[i + 1]
+        elif a == '--range' and i + 1 < len(args):
+            range_str = args[i + 1]
     if not date:
         from datetime import datetime
         date = datetime.now().strftime('%Y-%m-%d')
@@ -344,11 +347,25 @@ def main():
         for m in g.get('matches', []):
             matches.append(m)
 
-    print(f'[DATE] {date}  共 {len(matches)} 场')
+    # --range 过滤（序号=输出顺序=单售卖日竞彩场次尾号）
+    lo = hi = None
+    if range_str:
+        import re as _re
+        rm = _re.match(r'^\s*(\d+)\s*-\s*(\d+)\s*$', range_str)
+        if not rm:
+            print('[ERR] --range 格式应为 001-005')
+            sys.exit(2)
+        lo, hi = int(rm.group(1)), int(rm.group(2))
+    sel = [(i, m) for i, m in enumerate(matches, 1) if lo is None or lo <= i <= hi]
+    if not sel:
+        print('[ERR] 范围内无场次')
+        sys.exit(1)
+
+    print(f'[DATE] {date}  共 {len(matches)} 场' + (f'（范围 {range_str} → 跑 {len(sel)} 场）' if range_str else ''))
     print()
 
     lines = []
-    for i, m in enumerate(matches, 1):
+    for i, m in sel:
         num = m.get('matchnum', f'{i}')
         home = m.get('home', '?')
         away = m.get('away', '?')
