@@ -15,7 +15,7 @@
   python av_same_odds.py --fid 1364123 --league 挪超  # 单场
 输出与 sameodds 风格一致: 场次 header → 百家初/终盘 → 命中列表 → 分布统计。
 """
-import sys, os, io, json, time, argparse, math
+import sys, os, io, json, time, argparse, math, re
 
 SD = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE_DIR = os.path.join(SD, 'data', 'league_cache')

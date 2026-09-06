@@ -11,7 +11,7 @@
 输出与 pipeline step2 一致：竞彩初/终盘 header → 【一、相同联赛】明细+统计 → 【二、所有赛事】明细+统计。
 统计列 = 历史同赔比赛的赛果分布（胜/平/负 场数 + 胜率），明细含每场比分。
 """
-import sys, os, io, json, time, argparse
+import sys, os, io, json, time, argparse, re
 import requests
 from bs4 import BeautifulSoup
 
