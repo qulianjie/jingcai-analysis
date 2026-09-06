@@ -137,6 +137,7 @@ def main():
 
     tool_data = {}
     order_keys = []
+    used_range_files = False
     for tool in TOOL_ORDER:
         # range 版优先（5工具只跑部分场次时输出 *_NNN-NNN.txt）
         txt_path = None
@@ -144,6 +145,7 @@ def main():
             p2 = os.path.join(OUT_DIR, f"{tool}_{date_s}_{rng_s}.txt")
             if os.path.exists(p2):
                 txt_path = p2
+                used_range_files = True
         if txt_path is None:
             txt_path = os.path.join(OUT_DIR, f"{tool}_{date_s}.txt")
         # samepan 优先读补了欧赔的增强版 (enrich_samepan_odds.py 生成)
@@ -167,9 +169,9 @@ def main():
         print(f"[load] {tool}: {len(d)}")
     if not order_keys:
         order_keys = list(tool_data.get("merge", {}))
-    if rng:
+    if rng and not used_range_files:
         lo, hi = rng
-        # order_keys 顺序 = 场次 1..N（min/4way split 标题顺序）
+        # 仅全量文件需按位置裁剪；range 版文件本身已是子集，直接用
         order_keys = [k for i, k in enumerate(order_keys, 1) if lo <= i <= hi]
         print(f"[range] 保留场次 {lo}-{hi}: {len(order_keys)} 场", file=sys.stderr)
 
