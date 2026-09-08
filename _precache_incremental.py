@@ -34,7 +34,25 @@ MAJOR_LEAGUES = [
 ]
 
 RECORDS = 30      # 每队抓取最近场数
-ENRICH_WORKERS = 6
+
+def _fetch_retry(fid, tries=3):
+    """_fetch_match_odds 带重试：瞬时限流/超时失败后重试"""
+    import time as _t
+    for i in range(tries):
+        try:
+            r = P._fetch_match_odds(fid)
+            oe = r.get('odds_europe') or {}
+            jc = oe.get('jc') if isinstance(oe.get('jc'), dict) else None
+            av = oe.get('av') if isinstance(oe.get('av'), dict) else None
+            if jc and av and r.get('odds_asian'):
+                return r
+            if i < tries - 1:
+                _t.sleep(3 * (i + 1))
+        except Exception:
+            if i < tries - 1:
+                _t.sleep(3 * (i + 1))
+    return r if 'r' in dir() else None
+ENRICH_WORKERS = 3
 SLEEP_BETWEEN_TEAMS = 0.15
 
 # 500.com页面联赛名 → 缓存联赛名（页面叫法不同但同一赛事）
@@ -133,45 +151,43 @@ def incremental_update(league):
 
     # 新增 = 不在旧缓存里
     new_matches = [m for m in recent if str(m.get('FIXTUREID', '')) not in old_fids]
-    # 已有但旧缓存缺富集的（补富集）
-    to_enrich = [m for m in recent if str(m.get('FIXTUREID', '')) in old_fids
-                 and (not m.get('odds_europe') or not m.get('odds_handicap'))]
-    # 去重合并：旧缓存为底，新增直接加，to_enrich 只更新富集字段（不重复添加）
-    seen = set(old_fids)  # 旧缓存fid全部视为已存在
+    # 已有但旧缓存缺富集字段的（从旧缓存查真缺，AJAX 记录永远无 odds 不能作判据）
+    to_enrich_fids = []
+    for _m in old.get('all_matches', []):
+        _fid = str(_m.get('FIXTUREID', ''))
+        if not _fid or _fid in P.DEAD_FIDS:
+            continue
+        # 真空壳 = 无亚盘 且 (无 companies 且 jc 无值)；av 顶级缺失不算缺（工具可从 companies fallback）
+        _oe = _m.get('odds_europe') or {}
+        _cos = _oe.get('companies') or []
+        _jc_lw = ((_oe.get('jc') or {}).get('lw')) if isinstance(_oe.get('jc'), dict) else None
+        if not _m.get('odds_asian') or (not _cos and not _jc_lw):
+            to_enrich_fids.append(_fid)
+    to_enrich_fids = list(dict.fromkeys(to_enrich_fids))
+    # 去重合并：旧缓存为底，新增直接加
     merged = list(old.get('all_matches', []))
+    seen = set(old_fids)
     for m in new_matches:
         fid = str(m.get('FIXTUREID', ''))
         if fid and fid not in seen:
             seen.add(fid)
             merged.append(m)
-    # to_enrich 的场次已在 merged 中（fid 在旧缓存），只补字段，不新增条目
-    by_fid = {}
-    for idx, m in enumerate(merged):
-        fid = str(m.get('FIXTUREID', ''))
-        if fid:
-            by_fid[fid] = idx
-    for m in to_enrich:
-        fid = str(m.get('FIXTUREID', ''))
-        if fid and fid in by_fid:
-            idx = by_fid[fid]
-            for k in ('odds_europe', 'odds_handicap', 'odds_asian'):
-                if m.get(k) is not None and not merged[idx].get(k):
-                    merged[idx][k] = m[k]
     # 按日期排序（MATCHDATE 降序，新的在前，仅新增段）
     P._add_computed_fields(new_matches)
 
     print('[INC] {}: 旧缓存{}场 → 新增{}场，补富集{}场，合计{}场'.format(
-        league, old_count, len(new_matches), len(to_enrich), len(merged)), flush=True)
+        league, old_count, len(new_matches), len(to_enrich_fids), len(merged)), flush=True)
 
-    # 富集新增（欧赔+让球+亚盘）
-    enrich_targets = [m for m in new_matches if str(m.get('FIXTUREID', ''))]
-    if enrich_targets:
-        print('[INC] {}: 富集新增{}场...'.format(league, len(enrich_targets)), flush=True)
-        fids = [str(m.get('FIXTUREID')) for m in enrich_targets]
+    # 富集对象 = 新增 + 补富集 FID 并集
+    enrich_fids = [str(m.get('FIXTUREID', '')) for m in new_matches if str(m.get('FIXTUREID', ''))]
+    enrich_fids = list(dict.fromkeys(enrich_fids + to_enrich_fids))
+    if enrich_fids:
+        print('[INC] {}: 富集{}场（新增{} + 补富集{}）...'.format(
+            league, len(enrich_fids), len(new_matches), len(to_enrich_fids)), flush=True)
         enriched = {}
         errors = 0
         with ThreadPoolExecutor(max_workers=ENRICH_WORKERS) as ex:
-            fut_map = {ex.submit(P._fetch_match_odds, fid): fid for fid in fids}
+            fut_map = {ex.submit(_fetch_retry, fid): fid for fid in enrich_fids}
             for fut in as_completed(fut_map):
                 fid = fut_map[fut]
                 try:

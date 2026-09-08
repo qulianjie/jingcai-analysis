@@ -32,6 +32,16 @@ sess.headers.update({
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
 })
 
+def _req_headers():
+    """EdgeOne 防护下带 ticket cookie 的请求头；_http_common 不可用时退回裸 UA"""
+    try:
+        sys.path.insert(0, os.path.join(SCRIPT_DIR, 'scripts'))
+        from _http_common import headers as _hc
+        return _hc()
+    except Exception:
+        return {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+
+
 # 导入联赛工具
 sys.path.insert(0, SCRIPT_DIR)
 from _league_util import _league_match, LEAGUE_ID_MAP
@@ -324,9 +334,7 @@ def _fetch_match_odds(fid):
     # 1. 欧赔
     try:
         url = 'https://odds.500.com/fenxi/ouzhi-{}.shtml'.format(fid)
-        resp = requests.get(url, timeout=8, headers={
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        })
+        resp = requests.get(url, timeout=8, headers=_req_headers())
         resp.encoding = 'gbk'
         soup = BeautifulSoup(resp.text, 'html.parser')
         companies = []
@@ -347,8 +355,8 @@ def _fetch_match_odds(fid):
                         'iw': nums[0], 'id': nums[1], 'il': nums[2],
                         'lw': nums[3], 'ld': nums[4], 'll': nums[5]
                     })
-                if len(companies) >= 15: break
-            if len(companies) >= 15: break
+                if len(companies) >= 50: break
+            if len(companies) >= 50: break
         jc = iw = av = None
         for c in companies:
             if c['row_num'] == '1': jc = c
@@ -373,7 +381,7 @@ def _fetch_match_odds(fid):
     # 2. 让球
     try:
         url_rq = 'https://odds.500.com/fenxi/rangqiu-{}.shtml'.format(fid)
-        resp2 = requests.get(url_rq, timeout=8, headers={'User-Agent': 'Mozilla/5.0'})
+        resp2 = requests.get(url_rq, timeout=8, headers=_req_headers())
         resp2.encoding = 'gbk'
         soup2 = BeautifulSoup(resp2.text, 'html.parser')
         for table in soup2.find_all('table'):
@@ -406,7 +414,7 @@ def _fetch_match_odds(fid):
     # 3. 亚盘
     try:
         url_yz = 'https://odds.500.com/fenxi/yazhi-{}.shtml'.format(fid)
-        resp3 = requests.get(url_yz, timeout=8, headers={'User-Agent': 'Mozilla/5.0'})
+        resp3 = requests.get(url_yz, timeout=8, headers=_req_headers())
         resp3.encoding = 'gbk'
         soup3 = BeautifulSoup(resp3.text, 'html.parser')
         # 从表头确认"即时盘口"和"初始盘口"的视觉顺序
