@@ -189,7 +189,10 @@ def parse_score_history(fid):
 def classify_value(value, thresholds):
     """分类：多/中/少"""
     try:
-        v = float(str(value).replace(',', ''))
+        s = str(value).replace(',', '').strip()
+        if not s:
+            return '少'  # 空值（源站未提供成交量）归最少档，不崩整场
+        v = float(s)
         if v >= thresholds[1]:
             return '多'
         elif v >= thresholds[0]:
