@@ -46,8 +46,8 @@ def _fetch_retry(fid, tries=3):
                 cos = oe.get('companies') or []
                 jc = oe.get('jc') if isinstance(oe.get('jc'), dict) else None
                 av = oe.get('av') if isinstance(oe.get('av'), dict) else None
-                # 完整性校验：欧赔companies + jc + av + 让球 + 亚盘 全有才算成功（防被拦空页假成功）
-                if cos and jc and av and r.get('odds_handicap') and r.get('odds_asian'):
+                # 完整性校验：欧赔companies + jc + av + 亚盘 必须有；让球可选（部分场次源站rangqiu无数据）
+                if cos and jc and av and r.get('odds_asian'):
                     return r
             if i < tries - 1:
                 _t.sleep(3 * (i + 1))
@@ -184,6 +184,12 @@ def incremental_update(league):
     # 富集对象 = 新增 + 补富集 FID 并集
     enrich_fids = [str(m.get('FIXTUREID', '')) for m in new_matches if str(m.get('FIXTUREID', ''))]
     enrich_fids = list(dict.fromkeys(enrich_fids + to_enrich_fids))
+    # 分批防 EdgeOne：单批上限（PRECACHE_BATCH_LIMIT），跑完一批歇一批避免~300请求触发封禁
+    _lim = int(os.environ.get('PRECACHE_BATCH_LIMIT', '0') or 0)
+    if _lim > 0 and len(enrich_fids) > _lim:
+        print('[INC] {}: 批量上限{}场（实际{}），本批只补前{}场'.format(
+            league, _lim, len(enrich_fids), _lim), flush=True)
+        enrich_fids = enrich_fids[:_lim]
     if enrich_fids:
         print('[INC] {}: 富集{}场（新增{} + 补富集{}）...'.format(
             league, len(enrich_fids), len(new_matches), len(to_enrich_fids)), flush=True)
