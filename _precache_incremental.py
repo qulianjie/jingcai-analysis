@@ -55,7 +55,7 @@ def _fetch_retry(fid, tries=3):
             if i < tries - 1:
                 _t.sleep(3 * (i + 1))
     return None
-ENRICH_WORKERS = 3
+ENRICH_WORKERS = 1  # 并发1防EdgeOne JS challenge(2026-09-09实测3并发~140场触发封禁)
 SLEEP_BETWEEN_TEAMS = 0.15
 
 # 500.com页面联赛名 → 缓存联赛名（页面叫法不同但同一赛事）
