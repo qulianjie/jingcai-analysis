@@ -41,17 +41,20 @@ def _fetch_retry(fid, tries=3):
     for i in range(tries):
         try:
             r = P._fetch_match_odds(fid)
-            oe = r.get('odds_europe') or {}
-            jc = oe.get('jc') if isinstance(oe.get('jc'), dict) else None
-            av = oe.get('av') if isinstance(oe.get('av'), dict) else None
-            if jc and av and r.get('odds_asian'):
-                return r
+            if r:
+                oe = r.get('odds_europe') or {}
+                cos = oe.get('companies') or []
+                jc = oe.get('jc') if isinstance(oe.get('jc'), dict) else None
+                av = oe.get('av') if isinstance(oe.get('av'), dict) else None
+                # 完整性校验：欧赔companies + jc + av + 让球 + 亚盘 全有才算成功（防被拦空页假成功）
+                if cos and jc and av and r.get('odds_handicap') and r.get('odds_asian'):
+                    return r
             if i < tries - 1:
                 _t.sleep(3 * (i + 1))
         except Exception:
             if i < tries - 1:
                 _t.sleep(3 * (i + 1))
-    return r if 'r' in dir() else None
+    return None
 ENRICH_WORKERS = 3
 SLEEP_BETWEEN_TEAMS = 0.15
 
@@ -191,7 +194,11 @@ def incremental_update(league):
             for fut in as_completed(fut_map):
                 fid = fut_map[fut]
                 try:
-                    enriched[fid] = fut.result()
+                    res = fut.result()
+                    if res:
+                        enriched[fid] = res
+                    else:
+                        errors += 1
                 except Exception as e:
                     errors += 1
         for m in merged:
@@ -199,7 +206,7 @@ def incremental_update(league):
             if fid in enriched:
                 odds = enriched[fid]
                 for k in ('odds_europe', 'odds_handicap', 'odds_asian'):
-                    if odds.get(k) is not None:
+                    if odds.get(k):
                         m[k] = odds[k]
         print('[INC] {}: 富集完成 成功{} 失败{}'.format(league, len(enriched), errors), flush=True)
 
