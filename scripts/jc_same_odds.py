@@ -162,9 +162,9 @@ def query_match(matchnum, home, away, league, fid, out, bench=None):
 
     same = [x for x in parsed if x['is_same']]
     diff = [x for x in parsed if not x['is_same']]
-    level_order = {'高': 0, '中': 1, '低': 2}
-    same.sort(key=lambda x: level_order.get(x['ml'], 3))
-    diff.sort(key=lambda x: level_order.get(x['ml'], 3))
+    # 2026-09-15 用户要求：同初盘历史比赛按日期排序（与 samepan 正序口径一致）
+    same.sort(key=lambda x: x['date'])
+    diff.sort(key=lambda x: x['date'])
 
     def fmt_row(x):
         return '| %s | %s | %s %s:%s %s | %s | %.2f/%.2f/%.2f | %.2f/%.2f/%.2f | %s | %s | %s |' % (
