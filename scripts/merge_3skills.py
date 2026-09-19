@@ -47,12 +47,22 @@ def fmt_dist(dist):
 
 def parse_4way(txt):
     """编号 -> {'teams','fid','n','dist'}。标题行在文件头集中，块1..N 对应场次1..N。
-    支持子集输出（如只跑 006-016）：块按标题出现顺序与标题序号 zip 映射。"""
-    title_matches = list(re.finditer(r'^\[(\d+)/(\d+)\]\s*(.+?)\s+FID=(\d+).*?→\s*(\d+)场', txt, re.M))
+    支持子集输出（如只跑 006-016）：块按标题出现顺序与标题序号 zip 映射。
+
+    🚨 2026-09-19 永久补丁：旧正则把 `→ N场` 写在同一 pattern 里，导致**标题行缺 `→ N场` 时整行被跳过**
+    （触发场景：该场 `⚠️ 缺盘路`，jc=None iw=None 无法匹配，标题渲染成 `... ⚠️ 缺盘路` 无场数后缀）。
+    后果：idxs 比实际详情块少一项 → **从该场起所有场次的 4way 场数整体错位一位**
+    （09-19 实测 [21]=0/[22]=15/[23]=0… 全是前移一位的邻场数据，check 报 9 场不一致）。
+    修法：先按 `[N/M] ... FID=` 收**全部**标题行，再逐行单独取 `→ N场`；缺后缀记 n=0
+    （语义正确：缺盘路 = 该场 0 匹配）。"""
+    title_matches = list(re.finditer(r'^\[(\d+)/(\d+)\]\s*(.+?)\s+FID=(\d+)(.*)$', txt, re.M))
     idxs = [int(m.group(1)) for m in title_matches]
     titles = {}
     for m in title_matches:
-        titles[int(m.group(1))] = {'teams': m.group(3).strip(), 'fid': m.group(4), 'n': int(m.group(5))}
+        cm = re.search(r'→\s*(\d+)场', m.group(5))   # ⚠️ 必须用 group(5)=行尾剩余部分：
+        #   `(.+?)` 非贪婪 + 无 `$` 会让 group(0) 截断在 FID=\d+，箭头在 group(0) 之外 → cm 恒为 None
+        titles[int(m.group(1))] = {'teams': m.group(3).strip(), 'fid': m.group(4),
+                                   'n': int(cm.group(1)) if cm else 0}
     blocks = re.split(r'\r?\n═+\r?\n', txt)
     out = {}
     for bi, idx in enumerate(idxs, 1):  # 第 bi 个块 ↔ 标题列表第 bi 个序号

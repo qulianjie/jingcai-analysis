@@ -83,8 +83,12 @@ def main():
     except OSError as e:
         print('  读取失败:', e); return 1
     fw_title = {}
-    for m in re.finditer(r'^\[(\d+)/(\d+)\]\s*(.+?)\s+FID=\d+.*?→\s*(\d+)场', ftxt, re.M):
-        fw_title[int(m.group(1))] = int(m.group(4))
+    # 🚨 2026-09-19 永久补丁：与 merge_3skills.parse_4way 同源缺陷——旧正则把 `→ N场` 写进同一 pattern，
+    # 标题行缺后缀（该场 `⚠️ 缺盘路`，jc/iw=None 无法匹配）时整行被跳过 → 该场取不到值。
+    # 改为先收全部标题行、再逐行单独取场数；缺后缀 = 0 场（语义正确）。
+    for m in re.finditer(r'^\[(\d+)/(\d+)\]\s*(.+?)\s+FID=\d+(.*)$', ftxt, re.M):
+        cm = re.search(r'→\s*(\d+)场', m.group(4))   # ⚠️ 用 group(4)=行尾剩余（group(0) 会截断在 FID 处，取不到箭头）
+        fw_title[int(m.group(1))] = int(cm.group(1)) if cm else 0
     blocks = re.split(r'(?m)^(?=\[\d{2}\] )', mtxt)
     bad = 0
     for b in blocks:
