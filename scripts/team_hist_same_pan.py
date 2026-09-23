@@ -28,6 +28,7 @@ CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data
 ALIAS = {
     '韩职': 'K1联赛', 'K1联赛': '韩职',
     '美职足': '美职联', '美职联': '美职足',
+    '国际赛': '友谊赛',
     '英联赛杯': '英联杯', '英联杯': '英联赛杯',
 }
 
