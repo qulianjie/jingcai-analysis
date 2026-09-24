@@ -19,6 +19,17 @@ import _http_common
 
 SD = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE_DIR = os.path.join(SD, 'data', 'league_cache')
+
+# 2026-09-24 内存修复：缓存 JSON 按路径记忆化，避免每场重复 json.load 大缓存
+# （友谊赛.json 28MB / 球会友谊.json 37MB，8 场×多候选文件反复整载 -> MemoryError）
+_CACHE_JSON_MEMO = {}
+def _load_cache_json(_fp):
+    _d = _CACHE_JSON_MEMO.get(_fp)
+    if _d is None:
+        with open(_fp, encoding='utf-8') as _f:
+            _d = json.load(_f)
+        _CACHE_JSON_MEMO[_fp] = _d
+    return _d
 TASKS_DIR = os.path.join(SD, 'tasks')
 
 # 盘口名 → HANDICAPLINE 映射（按名称长度降序，避免"半球"提前匹配"半球/一球"）
@@ -362,8 +373,7 @@ def find_cache(league):
     best_score = -1
     for fn, _ in exact:
         try:
-            with open(os.path.join(CACHE_DIR, fn), encoding='utf-8') as f:
-                d = json.load(f)
+            d = _load_cache_json(os.path.join(CACHE_DIR, fn))
             cnt = len(d.get('all_matches', []))
             enriched = 1 if d.get('enriched') else 0
             score = cnt * 10 + (1000 if enriched else 0)
@@ -845,8 +855,7 @@ def main():
         fp = find_cache(league)
         if fp:
             try:
-                with open(fp, encoding='utf-8') as f:
-                    cd = json.load(f)
+                cd = _load_cache_json(fp)
                 ci = os.path.basename(fp)
             except:
                 pass

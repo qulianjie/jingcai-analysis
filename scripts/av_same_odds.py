@@ -23,7 +23,7 @@ TASKS_DIR = os.path.join(SD, 'tasks')
 
 # 复用 min_odds_match 的实时抓取 + 缓存查找(纯函数, 无副作用)
 sys.path.insert(0, os.path.join(SD, 'scripts'))
-from min_odds_match import fetch_today_odds, find_cache, get_hist_odds
+from min_odds_match import fetch_today_odds, find_cache, get_hist_odds, _load_cache_json
 
 RESULT_MAP = {3: '胜', 1: '平', 0: '负', None: '?'}
 
@@ -131,8 +131,7 @@ def query_match(matchnum, home, away, league, fid, out):
         p('⚠️ 无缓存（%s）' % league)
         p()
         return
-    with open(fp, encoding='utf-8') as f:
-        cd = json.load(f)
+    cd = _load_cache_json(fp)
     ml = cd.get('all_matches', [])
     p('缓存: %s (%d场)' % (os.path.basename(fp), len(ml)))
     p()

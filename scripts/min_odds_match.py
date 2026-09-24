@@ -11,6 +11,17 @@ from collections import Counter
 
 SD = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE_DIR = os.path.join(SD, 'data', 'league_cache')
+
+# 2026-09-24 内存修复：缓存 JSON 按路径记忆化，避免每场重复 json.load 大缓存
+# （友谊赛.json 28MB / 球会友谊.json 37MB，8 场×多候选文件反复整载 -> MemoryError）
+_CACHE_JSON_MEMO = {}
+def _load_cache_json(_fp):
+    _d = _CACHE_JSON_MEMO.get(_fp)
+    if _d is None:
+        with open(_fp, encoding='utf-8') as _f:
+            _d = json.load(_f)
+        _CACHE_JSON_MEMO[_fp] = _d
+    return _d
 TASKS_DIR = os.path.join(SD, 'tasks')
 
 # ── 盘口名→HANDICAPLINE ──────────────────────────
@@ -204,8 +215,7 @@ def find_cache(league):
         fp = os.path.join(CACHE_DIR, fn)
         # 富集加分+场数权重（防小文件精确名打败大文件富集缓存）
         try:
-            with open(fp, encoding='utf-8') as _f:
-                _d = json.load(_f)
+            _d = _load_cache_json(fp)
             _enriched = bool(_d.get('enriched'))
             _cnt = len(_d.get('all_matches', []))
             if _enriched:
@@ -500,8 +510,7 @@ def main():
         if not fp:
             print('  无缓存\n')
             continue
-        with open(fp, encoding='utf-8') as f:
-            cd = json.load(f)
+        cd = _load_cache_json(fp)
         ml = cd.get('all_matches', [])
         print(f'  缓存: {os.path.basename(fp)}({len(ml)}场)')
 

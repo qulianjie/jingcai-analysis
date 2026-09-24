@@ -25,6 +25,17 @@ import glob
 
 CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'league_cache')
 
+# 2026-09-24 内存修复：缓存 JSON 按路径记忆化，避免每场重复 json.load 大缓存
+# （友谊赛.json 28MB / 球会友谊.json 37MB，8 场×多候选文件反复整载 -> MemoryError）
+_CACHE_JSON_MEMO = {}
+def _load_cache_json(_fp):
+    _d = _CACHE_JSON_MEMO.get(_fp)
+    if _d is None:
+        with open(_fp, encoding='utf-8') as _f:
+            _d = json.load(_f)
+        _CACHE_JSON_MEMO[_fp] = _d
+    return _d
+
 ALIAS = {
     '韩职': 'K1联赛', 'K1联赛': '韩职',
     '美职足': '美职联', '美职联': '美职足',
@@ -71,8 +82,7 @@ def find_cache(league):
         else:
             continue
         try:
-            with open(fn, encoding='utf-8') as f:
-                d = json.load(f)
+            d = _load_cache_json(fn)
             cnt = len(d.get('all_matches', []))
             if d.get('enriched'):
                 score += 1000
@@ -394,8 +404,7 @@ def main():
             lines.append('')
             continue
 
-        with open(cache_path, encoding='utf-8') as f:
-            cd = json.load(f)
+        cd = _load_cache_json(cache_path)
         allm = cd.get('all_matches', [])
         cache_names = set()
         for x in allm:
