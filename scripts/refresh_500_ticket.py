@@ -13,16 +13,52 @@
 退出码: 0=成功拿到新ticket并更新, 1=失败(验证码形态非勾选/超时)
 """
 import argparse
+import atexit
 import io
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
 
 CHROME = r"C:\Users\lianjie\AppData\Local\Google\Chrome\Application\chrome.exe"
 HTTP_COMMON = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_http_common.py")
-TMP_PROFILE = r"C:\Users\lianjie\AppData\Local\Temp\pw_ticket_refresh"
+TMP_ROOT = r"C:\Users\lianjie\AppData\Local\Temp"
+PROFILE_PREFIX = "pw_ticket_"          # profile 目录前缀 (kill/清理都按它匹配)
+TMP_PROFILE = os.path.join(TMP_ROOT, "pw_ticket_refresh")   # 历史遗留常量, 已不使用
+
+# 本次运行需要清理的资源 (profile 目录 + chrome 进程), atexit 兜底
+_CLEANUP = {"profile": None, "chrome_pid": None}
+
+
+def _cleanup_resources():
+    """杀掉本次起的 Chrome (按 profile 路径匹配整棵进程树) 并删除 profile 目录。
+
+    2026-09-29 加: 此前脚本只 browser.close() 断开 CDP, Chrome 进程与 profile 全部残留
+    (实测攒了 27 个 profile / 1.1GB + 12 个僵尸 chrome 进程)。
+    """
+    prof = _CLEANUP.get("profile")
+    if not prof:
+        return
+    _CLEANUP["profile"] = None
+    try:
+        pat = os.path.basename(prof)
+        subprocess.run(
+            ["powershell.exe", "-NoProfile", "-Command",
+             f"Get-CimInstance Win32_Process | Where-Object {{ $_.Name -eq 'chrome.exe' -and $_.CommandLine -match '{pat}' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}"],
+            capture_output=True, timeout=30)
+    except Exception as e:
+        log(f"[warn] kill chrome: {e}")
+    time.sleep(1)
+    try:
+        if os.path.isdir(prof):
+            shutil.rmtree(prof, ignore_errors=True)
+    except Exception as e:
+        log(f"[warn] rmtree profile: {e}")
+
+
+atexit.register(_cleanup_resources)
 
 
 def log(*a):
@@ -39,11 +75,15 @@ def _is_pass(page):
 
 
 def _kill_old_chrome():
-    """杀掉上次残留的 ticket refresh chrome (按 profile 路径匹配)"""
+    """杀掉上次残留的 ticket refresh chrome (按 profile 前缀匹配)
+
+    2026-09-29 修: 原匹配串是 'pw_ticket_refresh', 而 _unique_profile() 生成的是
+    'pw_ticket_<时分秒>' → 永不命中, 等于从未清理 (TEMP 里堆了 27 个 profile)。
+    """
     try:
         ps = subprocess.run(
             ["powershell.exe", "-NoProfile", "-Command",
-             f"Get-CimInstance Win32_Process | Where-Object {{ $_.Name -eq 'chrome.exe' -and $_.CommandLine -match 'pw_ticket_refresh' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}"],
+             f"Get-CimInstance Win32_Process | Where-Object {{ $_.Name -eq 'chrome.exe' -and $_.CommandLine -match '{PROFILE_PREFIX}' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}"],
             capture_output=True, timeout=30)
     except Exception as e:
         log(f"[warn] kill old chrome: {e}")
@@ -99,7 +139,7 @@ def main():
     import datetime
     profile = _unique_profile()
     port = 9340 + int(datetime.datetime.now().strftime("%S")) % 10  # 9340-9349 避免端口占用
-    subprocess.Popen([
+    chrome_proc = subprocess.Popen([
         CHROME,
         f"--remote-debugging-port={port}",
         f"--user-data-dir={profile}",
@@ -107,6 +147,8 @@ def main():
         "--disable-blink-features=AutomationControlled",
         "about:blank",
     ])
+    _CLEANUP["chrome_pid"] = chrome_proc.pid
+    _CLEANUP["profile"] = profile
     log(f"[1/5] Chrome launched (port {port})")
     time.sleep(6)
 
@@ -216,6 +258,7 @@ def main():
                             "_http_common.py"],
                            cwd=os.path.dirname(HTTP_COMMON), check=False)
         log("[DONE] ticket refreshed")
+        _cleanup_resources()
         return 0
 
 
